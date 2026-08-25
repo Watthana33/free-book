@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>คู่มือขั้นตอนการพัฒนาโปรเจกต์ ระบบจัดการหนังสือเรียนฟรี | วิทยาลัยเทคนิคอุดรธานี</title>
+    <!-- Google Fonts & Font Awesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- html2pdf.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #1e3a8a;
+            --primary-light: #eff6ff;
+            --secondary: #0284c7;
+            --accent: #10b981;
+            --dark: #0f172a;
+            --gray-700: #334155;
+            --gray-600: #475569;
+            --gray-200: #e2e8f0;
+            --gray-100: #f8fafc;
+            --white: #ffffff;
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Prompt', sans-serif;
+            background-color: #f1f5f9;
+            color: var(--dark);
+            line-height: 1.7;
+            padding-bottom: 3rem;
+        }
+
+        /* Top Action Bar */
+        .top-bar {
+            position: sticky;
+            top: 0;
+            background: var(--white);
+            border-bottom: 1px solid var(--gray-200);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .brand-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-action-group {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1.2rem;
+            font-family: 'Prompt', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: var(--white);
+        }
+        .btn-primary:hover {
+            background-color: #1e40af;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background-color: var(--gray-200);
+            color: var(--dark);
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e1;
+        }
+
+        /* Main Document Layout */
+        .doc-container {
+            max-width: 960px;
+            margin: 2rem auto;
+            background: var(--white);
+            padding: 3.5rem 4rem;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--gray-200);
+        }
+
+        .doc-header {
+            text-align: center;
+            border-bottom: 2px solid var(--primary-light);
+            padding-bottom: 2rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .badge-header {
+            display: inline-block;
+            background: var(--primary-light);
+            color: var(--primary);
+            padding: 0.35rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .doc-header h1 {
+            font-size: 2rem;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+            line-height: 1.3;
+        }
+
+        .doc-header p {
+            color: var(--gray-600);
+            font-size: 1rem;
+        }
+
+        /* TOC */
+        .toc-box {
+            background: var(--gray-100);
+            border: 1px solid var(--gray-200);
+            border-radius: 10px;
+            padding: 1.5rem 2rem;
+            margin-bottom: 3rem;
+        }
+        .toc-title {
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .toc-list {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 0.75rem;
+        }
+        .toc-list a {
+            color: var(--gray-700);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .toc-list a:hover {
+            color: var(--secondary);
+            font-weight: 600;
+        }
+
+        /* Section Styling */
+        .section-block {
+            margin-bottom: 3rem;
+            scroll-margin-top: 5rem;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--gray-200);
+        }
+
+        .step-number {
+            background: var(--primary);
+            color: var(--white);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.4rem;
+            color: var(--dark);
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--gray-700);
+        }
+
+        ul, ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1.25rem;
+            color: var(--gray-700);
+        }
+
+        li {
+            margin-bottom: 0.4rem;
+        }
+
+        /* Code & Pre Blocks */
+        code {
+            font-family: 'Fira Code', monospace;
+            background: #f1f5f9;
+            color: #d97706;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.88rem;
+        }
+
+        pre {
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 1.25rem 1.5rem;
+            border-radius: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.88rem;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+
+        /* Callout Boxes */
+        .callout {
+            border-left: 4px solid var(--secondary);
+            background: var(--primary-light);
+            padding: 1.25rem;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 1.5rem;
+        }
+        .callout-title {
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.4rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .callout-success {
+            border-left-color: var(--accent);
+            background: #ecfdf5;
+        }
+        .callout-success .callout-title {
+            color: #047857;
+        }
+
+        /* Footer */
+        .doc-footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--gray-200);
+            text-align: center;
+            color: var(--gray-600);
+            font-size: 0.9rem;
+        }
+
+        /* PRINT STYLES */
+        @media print {
+            .top-bar {
+                display: none !important;
+            }
+            body {
+                background: #fff;
+                padding: 0;
+            }
+            .doc-container {
+                box-shadow: none;
+                border: none;
+                max-width: 100%;
+                padding: 0;
+                margin: 0;
+            }
+            .toc-box {
+                break-after: avoid;
+            }
+            .section-block {
+                break-inside: avoid;
+            }
+            pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+                background: #f8fafc !important;
+                color: #0f172a !important;
+                border: 1px solid #cbd5e1;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Top Action Bar (Hidden when printing) -->
+    <header class="top-bar">
+        <div class="brand-title">
+            <i class="fa-solid fa-book-open-reader"></i>
+            <span>คู่มือสถาปัตยกรรมและขั้นตอนการสร้างระบบ</span>
+        </div>
+        <div class="btn-action-group">
+            <a href="index.html" class="btn btn-secondary">
+                <i class="fa-solid fa-house"></i> กลับสู่หน้าหลักระบบ
+            </a>
+            <button onclick="exportGuidePDF()" class="btn btn-primary">
+                <i class="fa-solid fa-file-pdf"></i> พิมพ์เอกสารคู่มือ (PDF)
+            </button>
+        </div>
+    </header>
+
+    <!-- Document Content Container -->
+    <main class="doc-container" id="guideDocContent">
+        
+        <header class="doc-header">
+            <span class="badge-header">Complete System Architecture & Development Workflow Guide</span>
+            <h1>คู่มือขั้นตอนการพัฒนาโปรเจกต์ (Step-by-Step Guide)</h1>
+            <p>ระบบจัดการรายการหนังสือเรียนฟรี ระดับ ปวช. | วิทยาลัยเทคนิคอุดรธานี</p>
+            <p style="font-size:0.85rem; color:var(--gray-600); margin-top:0.5rem;">
+                <i class="fa-solid fa-code"></i> พัฒนาโดย: งานวิทยบริการและเทคโนโลยีการศึกษา
+            </p>
+        </header>
+
+        <!-- Table of Contents -->
+        <nav class="toc-box">
+            <div class="toc-title">
+                <i class="fa-solid fa-list-check"></i> สารบัญขั้นตอนการพัฒนา (8 ขั้นตอนหลัก)
+            </div>
+            <ul class="toc-list">
+                <li><a href="#step1">1. การวิเคราะห์ความต้องการ (Requirements)</a></li>
+                <li><a href="#step2">2. การวางโครงสร้างและ Design System (CSS)</a></li>
+                <li><a href="#step3">3. การจัดการ State & Local Storage</a></li>
+                <li><a href="#step4">4. การเชื่อมต่อ Realtime Cloud (Firebase)</a></li>
+                <li><a href="#step5">5. การคลีนข้อมูล & การรวมรายการอัตโนมัติ</a></li>
+                <li><a href="#step6">6. การสร้าง Dashboard & กราฟสถิติ (Chart.js)</a></li>
+                <li><a href="#step7">7. การนำเข้าและดาวน์โหลด Excel (SheetJS)</a></li>
+                <li><a href="#step8">8. ระบบออกรายงาน สอศ. และการพิมพ์ PDF</a></li>
+            </ul>
+        </nav>
+
+        <!-- Step 1 -->
+        <section id="step1" class="section-block">
+            <div class="section-header">
+                <div class="step-number">1</div>
+                <h2>การวิเคราะห์ความต้องการและการออกแบบโครงสร้างข้อมูล (Requirements Analysis)</h2>
+            </div>
+            <p>ขั้นตอนแรกคือการรวบรวมข้อกำหนดทางธุรกิจ (Business Rules) ของวิทยาลัยเทคนิคอุดรธานี สำหรับโครงการหนังสือเรียนฟรี ระดับ ปวช. โดยสรุปโครงสร้างข้อมูลสำคัญดังนี้:</p>
+            <ul>
+                <li><strong>ขอบเขตระดับชั้น:</strong> ระดับ ปวช.1, ปวช.2 และ ปวช.3</li>
+                <li><strong>โครงสร้างภาคเรียน:</strong> แยกปีการศึกษา (พ.ศ.) และภาคเรียน (ภาคเรียนที่ 1 และ ภาคเรียนที่ 2)</li>
+                <li><strong>โครงสร้างรายการสั่งซื้อ:</strong> แต่ละรายการประกอบด้วย <code>ปีการศึกษา</code>, <code>ภาคเรียน</code>, <code>แผนกวิชา</code>, <code>ระดับชั้น</code>, <code>รหัสวิชา</code>, <code>ชื่อหนังสือ</code>, <code>ผู้แต่ง</code>, <code>สำนักพิมพ์</code>, <code>จำนวนเล่ม</code>, และ <code>ราคาต่อเล่ม</code></li>
+                <li><strong>ระบบคำนวณงบประมาณ:</strong> <code>ราคารวม (Amount) = จำนวนเล่ม (Qty) × ราคาต่อเล่ม (Price)</code></li>
+            </ul>
+        </section>
+
+        <!-- Step 2 -->
+        <section id="step2" class="section-block">
+            <div class="section-header">
+                <div class="step-number">2</div>
+                <h2>การวางโครงสร้าง UI และระบบดีไซน์ (Design System & CSS)</h2>
+            </div>
+            <p>เราเลือกใช้ **Vanilla CSS** เพื่อให้ระบบโหลดเร็วและควบคุมสไตล์ได้อย่างสมบูรณ์ โดยสร้าง Design System ด้วย **CSS Custom Properties (Variables)** รองรับทั้ง Light Theme และ Dark Mode:</p>
+            <pre><code>/* Example Design System Variables in styles.css */
+:root {
+    --primary-color: #1e3a8a;
+    --primary-light: #eff6ff;
+    --secondary-color: #0284c7;
+    --accent-color: #10b981;
+    --bg-main: #f8fafc;
+    --card-bg: #ffffff;
+    --text-main: #0f172a;
+    --radius-md: 12px;
+    --shadow-sm: 0 4px 6px -1px rgba(0,0,0,0.05);
+}
+
+body.theme-dark {
+    --bg-main: #0f172a;
+    --card-bg: #1e293b;
+    --text-main: #f8fafc;
+}</code></pre>
+            <div class="callout">
+                <div class="callout-title"><i class="fa-solid fa-lightbulb"></i> จุดเด่นของสถาปัตยกรรม UI</div>
+                ใช้ฟอนต์ **Prompt** จาก Google Fonts ร่วมกับ **Font Awesome 6 Icons** และดีไซน์แบบ Glassmorphism ช่วยให้ระบบดูทันสมัย Premium พรีเมียม และสบายตา
+            </div>
+        </section>
+
+        <!-- Step 3 -->
+        <section id="step3" class="section-block">
+            <div class="section-header">
+                <div class="step-number">3</div>
+                <h2>การจัดการข้อมูลในความจำและการบันทึก (State Management & Security)</h2>
+            </div>
+            <p>การบริหารจัดการข้อมูลภายในแอปพลิเคชัน (SPA Architecture) ถูกรวมไว้ที่ <code>state</code> object เดียวใน <code>app.js</code> และใช้ **SHA-256 Hash Algorithm** สำหรับความปลอดภัยในโหมดผู้ดูแลระบบ (Admin):</p>
+            <pre><code>// Central Application State
+let state = {
+    orders: [],
+    isAdmin: false,
+    selectedYear: '2569',
+    selectedSemester: 'ภาคเรียนที่ 1',
+    customYears: [2569],
+    adminPassHash: "ae5c8040951ce84e4e933d89b556cfd6d0b316acc290a40d389542dba7aabdbc", // SHA-256
+    targetSubjects: { ... },
+    showSubjectCheckDashboard: true
+};
+
+// SHA-256 Encryption Function
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}</code></pre>
+        </section>
+
+        <!-- Step 4 -->
+        <section id="step4" class="section-block">
+            <div class="section-header">
+                <div class="step-number">4</div>
+                <h2>การเชื่อมต่อฐานข้อมูลคลาวด์สด (Firebase Realtime Database Integration)</h2>
+            </div>
+            <p>เพื่อรองรับการทำงานร่วมกันแบบ Realtime ของทีมงาน ได้ทำการเชื่อมต่อกับ **Firebase Web SDK (v9 compat)** ผ่าน CDN และสร้าง Event Listener ดักฟังการเปลี่ยนแปลงข้อมูลเรียลไทม์:</p>
+            <pre><code>// Initialize Firebase and Realtime Data Sync
+function initFirebaseConnection() {
+    let configObj = parseFirebaseConfigInput(savedConfigStr) || DEFAULT_FIREBASE_CONFIG;
+    
+    if (!firebase.apps.length) {
+        firebase.initializeApp(configObj);
+    }
+    firebaseDb = firebase.database();
+    isFirebaseConnected = true;
+
+    // Realtime Orders Sync Across All Connected Clients
+    firebaseDb.ref('orders').on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data && Array.isArray(data)) {
+            state.orders = data;
+            localStorage.setItem('freebook_orders', JSON.stringify(data));
+            renderAllViews();
+        }
+    });
+}</code></pre>
+        </section>
+
+        <!-- Step 5 -->
+        <section id="step5" class="section-block">
+            <div class="section-header">
+                <div class="step-number">5</div>
+                <h2>ระบบคลีนข้อมูลและการรวมรายการซ้ำอัตโนมัติ (Data Normalization & Auto-Merging)</h2>
+            </div>
+            <p>แก้ไขปัญหาความผิดพลาดของการเว้นวรรคไม่เท่ากัน (เช่น <code>ศูนย์หนังสือเมืองไทย</code> vs <code>ศูนย์   หนังสือเมืองไทย</code>) ด้วยระบบ **Text Normalization** และทำการรวมยอดเล่มหนังสืออัตโนมัติเมื่อคีย์วิชาเดียวกันซ้ำ:</p>
+            <pre><code>// Text Normalization (Removes redundant extra whitespace)
+function normalizeText(str) {
+    if (!str) return '';
+    return String(str).replace(/\s+/g, ' ').trim();
+}
+
+// Auto-Merging duplicate entries
+const existingIndex = state.orders.findIndex(o => 
+    o.year === year &&
+    o.semester === semester &&
+    getNormalizedKey(o.dept) === getNormalizedKey(dept) &&
+    getNormalizedKey(o.grade) === getNormalizedKey(grade) &&
+    getNormalizedKey(o.code) === getNormalizedKey(code) &&
+    getNormalizedKey(o.title) === getNormalizedKey(title)
+);
+
+if (existingIndex !== -1) {
+    state.orders[existingIndex].qty += qty; // Merge Quantity!
+    state.orders[existingIndex].amount = state.orders[existingIndex].qty * price;
+}</code></pre>
+        </section>
+
+        <!-- Step 6 -->
+        <section id="step6" class="section-block">
+            <div class="section-header">
+                <div class="step-number">6</div>
+                <h2>การพัฒนาระบบ Dashboard และแผนภูมิสถิติ (Chart.js Visualization)</h2>
+            </div>
+            <p>ใช้ไลบรารี **Chart.js** เพื่อสร้างแผนภูมิแบบโต้ตอบ 3 รูปแบบหลัก:</p>
+            <ol>
+                <li><strong>Doughnut Chart:</strong> แสดงสัดส่วนงบประมาณแยกตามแผนกวิชา</li>
+                <li><strong>Bar Chart:</strong> แสดงงบประมาณแยกตามสำนักพิมพ์</li>
+                <li><strong>Stacked Group Bar Chart:</strong> แสดงการเปรียบเทียบงบประมาณตามระดับชั้น (ปวช.1, ปวช.2, ปวช.3)</li>
+            </ol>
+        </section>
+
+        <!-- Step 7 -->
+        <section id="step7" class="section-block">
+            <div class="section-header">
+                <div class="step-number">7</div>
+                <h2>การพัฒนาโมดูลนำเข้าไฟล์ Excel และแม่แบบ (SheetJS Integration)</h2>
+            </div>
+            <p>รวมไลบรารี **SheetJS (`xlsx.full.min.js`)** ช่วยให้ผู้ดูแลระบบสามารถอัปโหลดไฟล์ Excel (.xlsx, .xls, .csv) เพื่อนำเข้าข้อมูลหลายร้อยรายการได้ใน 1 คลิก พร้อมทั้งปุ่มดาวน์โหลดไฟล์แม่แบบต้นแบบมาตรฐาน</p>
+        </section>
+
+        <!-- Step 8 -->
+        <section id="step8" class="section-block">
+            <div class="section-header">
+                <div class="step-number">8</div>
+                <h2>การสร้างรายงานสรุปตามแบบมาตรฐาน สอศ. และการพิมพ์ PDF</h2>
+            </div>
+            <p>ออกแบบตารางสรุปงบประมาณตามแบบฟอร์มทางการของ **สำนักงานคณะกรรมการการอาชีวศึกษา (สอศ.)** และรวมเอนจินการส่งออกไฟล์ PDF ผ่าน **`html2pdf.js`** เพื่อแปลงหน้าจอเป็นไฟล์ PDF คุณภาพสูง</p>
+            <div class="callout callout-success">
+                <div class="callout-title"><i class="fa-solid fa-circle-check"></i> สรุปความสำเร็จของการพัฒนาโปรเจกต์</div>
+                ระบบมีความสมบูรณ์ เสถียร รองรับการทำงานออนไลน์ร่วมกันแบบ Realtime และสามารถนำขึ้นใช้งานจริงได้อย่างเป็นมืออาชีพ!
+            </div>
+        </section>
+
+        <footer class="doc-footer">
+            <p>© พ.ศ. 2569 งานวิทยบริการและเทคโนโลยีการศึกษา วิทยาลัยเทคนิคอุดรธานี</p>
+            <p style="font-size:0.8rem; margin-top:0.3rem;">พัฒนาด้วย Vanilla HTML5, CSS3, JavaScript (ES6+), Firebase Realtime DB, Chart.js & SheetJS</p>
+        </footer>
+
+    </main>
+
+    <script>
+        function exportGuidePDF() {
+            const element = document.getElementById('guideDocContent');
+            const opt = {
+                margin:       10,
+                filename:     'Guide_Development_FreeBook_System.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            // Use html2pdf or fallback to browser native print
+            if (typeof html2pdf !== 'undefined') {
+                html2pdf().set(opt).from(element).save();
+            } else {
+                window.print();
+            }
+        }
+    </script>
+</body>
+</html>

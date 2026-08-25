@@ -1,0 +1,13 @@
+https://monumental-mandazi-660461.netlify.app
+
+-------------firebase-----------
+{
+  "apiKey": "AIzaSyAHUjcTlxOTGepWj8nRyfR9K8wwLx5EIvM",
+  "authDomain": "udontc-freebook.firebaseapp.com",
+  "databaseURL": "https://udontc-freebook-default-rtdb.asia-southeast1.firebasedatabase.app",
+  "projectId": "udontc-freebook",
+  "storageBucket": "udontc-freebook.firebasestorage.app",
+  "messagingSenderId": "410467848837",
+  "appId": "1:410467848837:web:68a1f9ebe56815cd1acfec",
+  "measurementId": "G-HK4E3GCKFJ"
+}
