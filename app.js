@@ -1278,46 +1278,90 @@ function initManageDataEvents() {
 
     backupYearBtn.addEventListener('click', () => {
         const yearToBackup = purgeYearSelect.value;
-        const yearOrders = state.orders.filter(o => String(o.year) === String(yearToBackup));
+        const purgeSemesterSelect = document.getElementById('purgeSemesterSelect');
+        const semesterToBackup = purgeSemesterSelect ? purgeSemesterSelect.value : 'ALL';
         
-        if (yearOrders.length === 0) {
-            showToast(`ไม่พบรายการข้อมูลของปีการศึกษา ${yearToBackup} สำหรับสำรอง`, 'info');
+        let targetOrders;
+        let fileName;
+        let successMsg;
+
+        if (semesterToBackup === 'ALL') {
+            targetOrders = state.orders.filter(o => String(o.year) === String(yearToBackup));
+            fileName = `Backup_FreeBook_${yearToBackup}.json`;
+            successMsg = `สำรองข้อมูลปีการศึกษา ${yearToBackup} สำเร็จ!`;
+        } else {
+            targetOrders = state.orders.filter(o => String(o.year) === String(yearToBackup) && o.semester === semesterToBackup);
+            const semStr = semesterToBackup === 'ภาคเรียนที่ 1' ? 'Sem1' : 'Sem2';
+            fileName = `Backup_FreeBook_${yearToBackup}_${semStr}.json`;
+            successMsg = `สำรองข้อมูล ${semesterToBackup} ของปีการศึกษา ${yearToBackup} สำเร็จ!`;
+        }
+        
+        if (targetOrders.length === 0) {
+            showToast(`ไม่พบรายการข้อมูลตามเงื่อนไขที่เลือก สำหรับสำรอง`, 'info');
             return;
         }
 
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(yearOrders, null, 2));
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(targetOrders, null, 2));
         const dlAnchor = document.createElement('a');
         dlAnchor.setAttribute("href", dataStr);
-        dlAnchor.setAttribute("download", `Backup_FreeBook_${yearToBackup}.json`);
+        dlAnchor.setAttribute("download", fileName);
         document.body.appendChild(dlAnchor);
         dlAnchor.click();
         dlAnchor.remove();
-        showToast(`สำรองข้อมูลปีการศึกษา ${yearToBackup} สำเร็จ!`, 'success');
+        showToast(successMsg, 'success');
     });
 
     purgeYearBtn.addEventListener('click', () => {
         const yearToPurge = purgeYearSelect.value;
+        const purgeSemesterSelect = document.getElementById('purgeSemesterSelect');
+        const semesterToPurge = purgeSemesterSelect ? purgeSemesterSelect.value : 'ALL';
+        
         if (!yearToPurge) return;
 
-        const count = state.orders.filter(o => String(o.year) === String(yearToPurge)).length;
+        let targetOrders;
+        let confirmMsg;
+        let successMsg;
 
-        if (confirm(`⚠️ ยืนยันการลบข้อมูลและลบปีการศึกษา ${yearToPurge} ออกจากระบบเด็ดขาด?\n(รวมทั้งหมด ${count} รายการ ข้อมูลปีนี้และรายการปีการศึกษา ${yearToPurge} จะถูกลบออกเรียบร้อย)`)) {
-            state.orders = state.orders.filter(o => String(o.year) !== String(yearToPurge));
-            saveOrdersToStorage();
+        if (semesterToPurge === 'ALL') {
+            targetOrders = state.orders.filter(o => String(o.year) === String(yearToPurge));
+            confirmMsg = `⚠️ ยืนยันการลบข้อมูล "ทั้งปีการศึกษา ${yearToPurge}" เด็ดขาด?\n(รวมทั้งหมด ${targetOrders.length} รายการ ข้อมูลปีนี้จะถูกลบออกทั้งหมด)`;
+            successMsg = `ลบข้อมูลปีการศึกษา ${yearToPurge} ออกจากระบบเรียบร้อยแล้ว`;
+        } else {
+            targetOrders = state.orders.filter(o => String(o.year) === String(yearToPurge) && o.semester === semesterToPurge);
+            confirmMsg = `⚠️ ยืนยันการลบข้อมูลของ "ปีการศึกษา ${yearToPurge} ${semesterToPurge}" เด็ดขาด?\n(รวมทั้งหมด ${targetOrders.length} รายการ)`;
+            successMsg = `ลบข้อมูล ${semesterToPurge} ของปีการศึกษา ${yearToPurge} ออกจากระบบเรียบร้อยแล้ว`;
+        }
 
-            state.customYears = state.customYears.filter(y => String(y) !== String(yearToPurge));
-            saveCustomYearsToStorage();
-
-            const remainingYears = getAllYearsSortedDescending();
-            if (state.selectedYear === String(yearToPurge)) {
-                state.selectedYear = remainingYears[0] ? String(remainingYears[0]) : 'ALL';
+        if (confirm(confirmMsg)) {
+            if (semesterToPurge === 'ALL') {
+                state.orders = state.orders.filter(o => String(o.year) !== String(yearToPurge));
+                state.customYears = state.customYears.filter(y => String(y) !== String(yearToPurge));
+                saveCustomYearsToStorage();
+                
+                const remainingYears = getAllYearsSortedDescending();
+                if (state.selectedYear === String(yearToPurge)) {
+                    state.selectedYear = remainingYears[0] ? String(remainingYears[0]) : 'ALL';
+                }
+            } else {
+                state.orders = state.orders.filter(o => !(String(o.year) === String(yearToPurge) && o.semester === semesterToPurge));
+                // Only remove year if no orders left for that year at all
+                const remainingInYear = state.orders.some(o => String(o.year) === String(yearToPurge));
+                if (!remainingInYear) {
+                    state.customYears = state.customYears.filter(y => String(y) !== String(yearToPurge));
+                    saveCustomYearsToStorage();
+                    const remainingYears = getAllYearsSortedDescending();
+                    if (state.selectedYear === String(yearToPurge)) {
+                        state.selectedYear = remainingYears[0] ? String(remainingYears[0]) : 'ALL';
+                    }
+                }
             }
 
+            saveOrdersToStorage();
             renderYearDropdownOptions();
             renderAllViews();
             updatePurgeDropdown();
 
-            showToast(`ลบข้อมูลและลบปีการศึกษา ${yearToPurge} ออกจากระบบเรียบร้อยแล้ว`, 'danger');
+            showToast(successMsg, 'danger');
         }
     });
 }

@@ -8,6 +8,8 @@
    git config --global user.name "ชื่อของคุณ"
    git config --global user.email "อีเมลของคุณ@gmail.com"
 
+//git config --global user.name "ชื่อของคุณ"
+
 สเต็ปที่ 2: สร้างกล่องเก็บโค้ดบนเว็บ GitHub
 1. ล็อกอินเข้าเว็บ GitHub กดปุ่ม "+" มุมขวาบน เลือก "New repository"
 2. ตั้งชื่อโปรเจกต์ เช่น free-book-system

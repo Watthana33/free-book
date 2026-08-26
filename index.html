@@ -432,7 +432,7 @@
 
                 <!-- Summary Table 1: สรุปงบประมาณแยกตามแผนกวิชา และระดับชั้น -->
                 <div class="report-section">
-                    <h4 class="report-section-title"><i class="fa-solid fa-list-ol"></i> 1. ตารางสรุปงบประมาณจัดซื้อหนังสือแยกตามแผนกวิชา และระดับชั้น (ปวช.1 - ปวช.3)</h4>
+                    <h4 class="report-section-title">1. ตารางสรุปงบประมาณจัดซื้อหนังสือแยกตามแผนกวิชา และระดับชั้น (ปวช.1 - ปวช.3)</h4>
                     <table class="report-table">
                         <thead>
                             <tr>
@@ -463,7 +463,7 @@
 
                 <!-- Summary Table 2: สรุปแยกตามสำนักพิมพ์ -->
                 <div class="report-section">
-                    <h4 class="report-section-title"><i class="fa-solid fa-building"></i> 2. ตารางสรุปยอดจัดซื้อแยกตามรายสำนักพิมพ์</h4>
+                    <h4 class="report-section-title">2. ตารางสรุปยอดจัดซื้อแยกตามรายสำนักพิมพ์</h4>
                     <table class="report-table">
                         <thead>
                             <tr>
@@ -493,12 +493,7 @@
                 <!-- Signature Block -->
                 <div class="signature-container">
                     <div class="sig-box">
-                        <p>ลงชื่อ...................................................ผู้จัดทำ</p>
-                        <p>( ................................................... )</p>
-                        <p><strong>เจ้าหน้าที่งานวิทยบริการฯ</strong></p>
-                    </div>
-                    <div class="sig-box">
-                        <p>ลงชื่อ...................................................ผู้ตรวจทาน</p>
+                        <p>ลงชื่อ...................................................ผู้เสนอ</p>
                         <p>( ................................................... )</p>
                         <p><strong>หัวหน้างานวิทยบริการและเทคโนโลยีการศึกษา</strong></p>
                     </div>
@@ -506,6 +501,11 @@
                         <p>ลงชื่อ...................................................ผู้เห็นชอบ</p>
                         <p>( ................................................... )</p>
                         <p><strong>รองผู้อำนวยการฝ่ายวิชาการ</strong></p>
+                    </div>
+                    <div class="sig-box">
+                        <p>ลงชื่อ...................................................ผู้อนุมัติ</p>
+                        <p>( ................................................... )</p>
+                        <p><strong>ผู้อำนวยการวิทยาลัยเทคนิคอุดรธานี</strong></p>
                     </div>
                 </div>
 
@@ -819,17 +819,22 @@
 
                 <!-- Section 2: Delete Old Data by Year -->
                 <div class="filter-card mb-4" style="border-color:#fca5a5; background:#fff5f5;">
-                    <h4 class="mb-2" style="color:#dc2626;"><i class="fa-solid fa-trash-can"></i> 2. ลบ/ล้างข้อมูลปีการศึกษาเก่า (Purge Data & Remove Year)</h4>
-                    <p class="text-muted mb-2" style="font-size:0.85rem;">เลือกลบข้อมูลและลบปีการศึกษาออกจากรายการแบบถาวร (แนะนำให้ดาวน์โหลด Backup เก็บไว้ก่อนลบ):</p>
+                    <h4 class="mb-2" style="color:#dc2626;"><i class="fa-solid fa-trash-can"></i> 2. ลบ/ล้างข้อมูล (Purge Data)</h4>
+                    <p class="text-muted mb-2" style="font-size:0.85rem;">เลือกลบข้อมูลตามปีการศึกษาและภาคเรียน (แนะนำให้ดาวน์โหลด Backup เก็บไว้ก่อนลบ):</p>
                     <div class="flex-gap">
                         <select id="purgeYearSelect" class="form-select">
                             <!-- Dynamic Years -->
                         </select>
-                        <button id="backupYearBtn" class="btn btn-outline">
-                            <i class="fa-solid fa-download"></i> สำรองข้อมูล (Backup)
+                        <select id="purgeSemesterSelect" class="form-select">
+                            <option value="ALL">-- ทั้งปีการศึกษา --</option>
+                            <option value="ภาคเรียนที่ 1">ภาคเรียนที่ 1</option>
+                            <option value="ภาคเรียนที่ 2">ภาคเรียนที่ 2</option>
+                        </select>
+                        <button id="backupYearBtn" class="btn btn-outline" title="สำรองข้อมูลของปีที่เลือก">
+                            <i class="fa-solid fa-download"></i> สำรองข้อมูล
                         </button>
                         <button id="purgeYearBtn" class="btn btn-danger-soft">
-                            <i class="fa-solid fa-trash-can"></i> ลบข้อมูลและลบปีนี้
+                            <i class="fa-solid fa-trash-can"></i> ลบข้อมูลที่เลือก
                         </button>
                     </div>
                 </div>
