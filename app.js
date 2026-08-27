@@ -205,16 +205,7 @@ const INITIAL_ORDERS_DATA = [
     }
 ];
 
-const DEFAULT_FIREBASE_CONFIG = {
-    apiKey: "AIzaSyAHUjcTlxOTGepWj8nRyfR9K8wwLx5EIvM",
-    authDomain: "udontc-freebook.firebaseapp.com",
-    databaseURL: "https://udontc-freebook-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "udontc-freebook",
-    storageBucket: "udontc-freebook.firebasestorage.app",
-    messagingSenderId: "410467848837",
-    appId: "1:410467848837:web:68a1f9ebe56815cd1acfec",
-    measurementId: "G-HK4E3GCKFJ"
-};
+
 
 const DEFAULT_TARGET_SUBJECTS = {
     "ช่างยนต์_ปวช.1": 10,
@@ -261,8 +252,8 @@ const KNOWN_DEPARTMENTS = [
 // =========================================================
 // 2. STATE MANAGEMENT & FIREBASE VARIABLES
 // =========================================================
-let firebaseDb = null;
-let isFirebaseConnected = false;
+let googleSheetsUrl = "";
+let isGoogleSheetsConnected = false;
 
 let state = {
     orders: [],
@@ -303,7 +294,7 @@ async function sha256(message) {
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {
     loadStateFromStorage();
-    initFirebaseConnection();
+    initGoogleSheetsConnection();
     initTheme();
     initDate();
     initGlobalTermSelector();
@@ -315,7 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTargetConfigEvents();
     initManageDataEvents();
     initImportExcelEvents();
-    initFirebaseConfigEvents();
+    initGoogleSheetsConfigEvents();
     
     renderAllViews();
 });
@@ -358,32 +349,40 @@ function loadStateFromStorage() {
     updateAdminUI();
 }
 
+async function syncToGoogleSheets(type, data) {
+    if (isGoogleSheetsConnected && googleSheetsUrl) {
+        try {
+            await fetch(googleSheetsUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8',
+                },
+                body: JSON.stringify({ type, data })
+            });
+        } catch (e) {
+            console.error("Google Sheets POST error:", e);
+        }
+    }
+}
+
 function saveOrdersToStorage() {
     localStorage.setItem('freebook_orders', JSON.stringify(state.orders));
-    if (isFirebaseConnected && firebaseDb) {
-        firebaseDb.ref('orders').set(state.orders);
-    }
+    syncToGoogleSheets('orders', state.orders);
 }
 
 function saveCustomYearsToStorage() {
     localStorage.setItem('freebook_custom_years', JSON.stringify(state.customYears));
-    if (isFirebaseConnected && firebaseDb) {
-        firebaseDb.ref('customYears').set(state.customYears);
-    }
+    syncToGoogleSheets('customYears', state.customYears);
 }
 
 function saveTargetsToStorage() {
     localStorage.setItem('freebook_target_subjects', JSON.stringify(state.targetSubjects));
-    if (isFirebaseConnected && firebaseDb) {
-        firebaseDb.ref('targetSubjects').set(state.targetSubjects);
-    }
+    syncToGoogleSheets('targetSubjects', state.targetSubjects);
 }
 
 function saveShowCheckToStorage() {
     localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
-    if (isFirebaseConnected && firebaseDb) {
-        firebaseDb.ref('showSubjectCheckDashboard').set(state.showSubjectCheckDashboard);
-    }
+    syncToGoogleSheets('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
 }
 
 function initDate() {
@@ -400,109 +399,74 @@ function getUniqueSubjectKey(o) {
     return `${code}_${title}`;
 }
 
-function parseFirebaseConfigInput(input) {
-    if (!input) return DEFAULT_FIREBASE_CONFIG;
-    let str = String(input).trim();
-
-    const firstBrace = str.indexOf('{');
-    const lastBrace = str.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        str = str.substring(firstBrace, lastBrace + 1);
-    }
-
-    try {
-        return JSON.parse(str);
-    } catch (e1) {
-        try {
-            return eval('(' + str + ')');
-        } catch (e2) {
-            console.error("Firebase config parse error:", e2);
-            return null;
-        }
-    }
-}
-
 // =========================================================
-// 4. FIREBASE CLOUD REALTIME SYNC
+// 4. GOOGLE SHEETS SYNC
 // =========================================================
-function initFirebaseConnection() {
-    let savedConfigStr = localStorage.getItem('freebook_firebase_config');
-    let configObj = parseFirebaseConfigInput(savedConfigStr) || DEFAULT_FIREBASE_CONFIG;
+async function initGoogleSheetsConnection() {
+    googleSheetsUrl = localStorage.getItem('freebook_google_sheets_url') || "";
 
-    if (!configObj || typeof firebase === 'undefined') {
-        updateFirebaseStatusUI(false);
+    if (!googleSheetsUrl) {
+        updateGoogleSheetsStatusUI(false);
+        isGoogleSheetsConnected = false;
         return;
     }
 
     try {
-        if (!firebase.apps.length) {
-            firebase.initializeApp(configObj);
-        }
+        updateGoogleSheetsStatusUI(true, "กำลังซิงค์...");
+        const response = await fetch(googleSheetsUrl);
+        const data = await response.json();
         
-        firebaseDb = firebase.database();
-        isFirebaseConnected = true;
-        updateFirebaseStatusUI(true);
-
-        firebaseDb.ref('orders').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data && Array.isArray(data)) {
-                state.orders = data;
-                localStorage.setItem('freebook_orders', JSON.stringify(data));
-                renderAllViews();
-            } else if (data === null) {
-                firebaseDb.ref('orders').set(state.orders);
+        if (data) {
+            let dataUpdated = false;
+            if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+                state.orders = data.orders;
+                localStorage.setItem('freebook_orders', JSON.stringify(data.orders));
+                dataUpdated = true;
             }
-        });
-
-        firebaseDb.ref('customYears').on('value', (snapshot) => {
-            const years = snapshot.val();
-            if (years && Array.isArray(years)) {
-                state.customYears = years;
-                localStorage.setItem('freebook_custom_years', JSON.stringify(years));
-                renderYearDropdownOptions();
+            if (data.customYears && Array.isArray(data.customYears) && data.customYears.length > 0) {
+                state.customYears = data.customYears;
+                localStorage.setItem('freebook_custom_years', JSON.stringify(data.customYears));
             }
-        });
-
-        firebaseDb.ref('targetSubjects').on('value', (snapshot) => {
-            const targets = snapshot.val();
-            if (targets) {
-                state.targetSubjects = targets;
-                localStorage.setItem('freebook_target_subjects', JSON.stringify(targets));
-                renderSubjectCheckWidget();
+            if (data.targetSubjects && Object.keys(data.targetSubjects).length > 0) {
+                state.targetSubjects = data.targetSubjects;
+                localStorage.setItem('freebook_target_subjects', JSON.stringify(data.targetSubjects));
             }
-        });
-
-        firebaseDb.ref('showSubjectCheckDashboard').on('value', (snapshot) => {
-            const val = snapshot.val();
-            if (val !== null) {
-                state.showSubjectCheckDashboard = (val === true || val === 'true');
+            if (data.showSubjectCheckDashboard !== undefined) {
+                state.showSubjectCheckDashboard = data.showSubjectCheckDashboard;
                 localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
-                renderSubjectCheckWidget();
             }
-        });
-
+            
+            if (dataUpdated) renderAllViews();
+            renderYearDropdownOptions();
+            renderSubjectCheckWidget();
+            
+            isGoogleSheetsConnected = true;
+            updateGoogleSheetsStatusUI(true, 'เชื่อมต่อ Google Sheets สำเร็จ');
+        } else {
+            throw new Error("No data received");
+        }
     } catch (e) {
-        console.error("Firebase connection failed:", e);
-        isFirebaseConnected = false;
-        updateFirebaseStatusUI(false);
+        console.error("Google Sheets connection failed:", e);
+        isGoogleSheetsConnected = false;
+        updateGoogleSheetsStatusUI(false, 'เชื่อมต่อล้มเหลว');
     }
 }
 
-function updateFirebaseStatusUI(connected) {
-    const dot = document.getElementById('firebaseStatusDot');
-    const text = document.getElementById('firebaseStatusText');
+function updateGoogleSheetsStatusUI(connected, customText) {
+    const dot = document.getElementById('googleSheetsStatusDot');
+    const text = document.getElementById('googleSheetsStatusText');
     const icon = document.getElementById('cloudStatusIcon');
 
     if (connected) {
         if (dot) dot.style.color = '#10b981';
-        if (text) text.innerText = 'เชื่อมต่อฐานข้อมูลคลาวด์สด (Firebase udontc-freebook)';
+        if (text) text.innerText = customText || 'เชื่อมต่อ Google Sheets แล้ว';
         if (icon) {
             icon.className = 'fa-solid fa-cloud';
             icon.style.color = '#10b981';
         }
     } else {
         if (dot) dot.style.color = '#ef4444';
-        if (text) text.innerText = 'ใช้งานฐานข้อมูลเครื่อง (Local)';
+        if (text) text.innerText = customText || 'ใช้งานฐานข้อมูลเครื่อง (Local)';
         if (icon) {
             icon.className = 'fa-solid fa-cloud-slash';
             icon.style.color = '#ef4444';
@@ -510,68 +474,70 @@ function updateFirebaseStatusUI(connected) {
     }
 }
 
-function initFirebaseConfigEvents() {
+function initGoogleSheetsConfigEvents() {
     const cloudStatusBtn = document.getElementById('cloudStatusBtn');
-    const firebaseStatusBadge = document.getElementById('firebaseStatusBadge');
-    const firebaseConfigModal = document.getElementById('firebaseConfigModal');
-    const closeFirebaseModalBtn = document.getElementById('closeFirebaseModalBtn');
-    const saveFirebaseConfigBtn = document.getElementById('saveFirebaseConfigBtn');
-    const disconnectFirebaseBtn = document.getElementById('disconnectFirebaseBtn');
-    const firebaseConfigInput = document.getElementById('firebaseConfigInput');
-    const firebaseConfigError = document.getElementById('firebaseConfigError');
+    const googleSheetsStatusBadge = document.getElementById('googleSheetsStatusBadge');
+    const googleSheetsConfigModal = document.getElementById('googleSheetsConfigModal');
+    const closeGoogleSheetsModalBtn = document.getElementById('closeGoogleSheetsModalBtn');
+    const saveGoogleSheetsConfigBtn = document.getElementById('saveGoogleSheetsConfigBtn');
+    const disconnectGoogleSheetsBtn = document.getElementById('disconnectGoogleSheetsBtn');
+    const googleSheetsUrlInput = document.getElementById('googleSheetsUrlInput');
+    const googleSheetsConfigError = document.getElementById('googleSheetsConfigError');
 
     const openModal = () => {
         if (!state.isAdmin) {
             showToast('🔒 เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถตั้งค่าฐานข้อมูลได้', 'info');
             return;
         }
-        firebaseConfigInput.value = localStorage.getItem('freebook_firebase_config') || JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
-        firebaseConfigError.classList.add('hidden');
-        firebaseConfigModal.classList.remove('hidden');
+        googleSheetsUrlInput.value = localStorage.getItem('freebook_google_sheets_url') || "";
+        googleSheetsConfigError.classList.add('hidden');
+        googleSheetsConfigModal.classList.remove('hidden');
     };
 
     cloudStatusBtn.addEventListener('click', openModal);
-    if (firebaseStatusBadge) firebaseStatusBadge.addEventListener('click', openModal);
+    if (googleSheetsStatusBadge) googleSheetsStatusBadge.addEventListener('click', openModal);
 
-    const closeModal = () => firebaseConfigModal.classList.add('hidden');
-    closeFirebaseModalBtn.addEventListener('click', closeModal);
+    const closeModal = () => googleSheetsConfigModal.classList.add('hidden');
+    closeGoogleSheetsModalBtn.addEventListener('click', closeModal);
 
-    saveFirebaseConfigBtn.addEventListener('click', () => {
+    saveGoogleSheetsConfigBtn.addEventListener('click', async () => {
         if (!state.isAdmin) return;
 
-        const rawConfigStr = firebaseConfigInput.value.trim();
-        const parsed = parseFirebaseConfigInput(rawConfigStr);
+        const rawUrl = googleSheetsUrlInput.value.trim();
 
-        if (!parsed || !parsed.apiKey) {
-            firebaseConfigError.innerText = 'รูปแบบ Config ไม่ถูกต้อง กรุณาก๊อปปี้จาก Firebase Console';
-            firebaseConfigError.classList.remove('hidden');
+        if (!rawUrl || !rawUrl.startsWith('https://script.google.com/')) {
+            googleSheetsConfigError.innerText = 'URL ต้องเริ่มต้นด้วย https://script.google.com/...';
+            googleSheetsConfigError.classList.remove('hidden');
             return;
         }
 
-        try {
-            localStorage.setItem('freebook_firebase_config', JSON.stringify(parsed));
-            initFirebaseConnection();
-            if (isFirebaseConnected) {
-                closeModal();
-                showToast('เชื่อมต่อฐานข้อมูลคลาวด์ Firebase สำเร็จแล้ว! ข้อมูลจะซิงค์สดอัตโนมัติ', 'success');
-            } else {
-                firebaseConfigError.innerText = 'ไม่สามารถเชื่อมต่อ Firebase ได้ กรุณาตรวจสอบ Config';
-                firebaseConfigError.classList.remove('hidden');
-            }
-        } catch (err) {
-            firebaseConfigError.innerText = 'เกิดข้อผิดพลาดในการตั้งค่า';
-            firebaseConfigError.classList.remove('hidden');
+        googleSheetsConfigError.classList.add('hidden');
+        saveGoogleSheetsConfigBtn.disabled = true;
+        saveGoogleSheetsConfigBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...';
+
+        localStorage.setItem('freebook_google_sheets_url', rawUrl);
+        await initGoogleSheetsConnection();
+
+        if (isGoogleSheetsConnected) {
+            closeModal();
+            showToast('เชื่อมต่อ Google Sheets สำเร็จแล้ว!', 'success');
+        } else {
+            googleSheetsConfigError.innerText = 'ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบ URL หรือสิทธิ์การเข้าถึง';
+            googleSheetsConfigError.classList.remove('hidden');
         }
+        
+        saveGoogleSheetsConfigBtn.disabled = false;
+        saveGoogleSheetsConfigBtn.innerHTML = '<i class="fa-solid fa-plug"></i> บันทึก URL เชื่อมต่อ';
     });
 
-    disconnectFirebaseBtn.addEventListener('click', () => {
+    disconnectGoogleSheetsBtn.addEventListener('click', () => {
         if (!state.isAdmin) return;
 
-        if (confirm('ยกเลิกการเชื่อมต่อ Firebase และกลับไปใช้ LocalStorage หรือไม่?')) {
-            localStorage.removeItem('freebook_firebase_config');
-            isFirebaseConnected = false;
-            firebaseDb = null;
-            updateFirebaseStatusUI(false);
+        if (confirm('ยกเลิกการเชื่อมต่อ Google Sheets และกลับไปใช้ LocalStorage หรือไม่?')) {
+            localStorage.removeItem('freebook_google_sheets_url');
+            isGoogleSheetsConnected = false;
+            googleSheetsUrl = "";
+            updateGoogleSheetsStatusUI(false);
             closeModal();
             showToast('สลับกลับมาใช้ฐานข้อมูลในเครื่อง (LocalStorage)', 'info');
         }

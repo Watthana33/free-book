@@ -22,9 +22,7 @@
     <!-- SheetJS (xlsx) CDN for Excel Import/Export -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-    <!-- Firebase SDK (Compat Version for Web) -->
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <!-- Google Sheets Sync (No External SDK Required) -->
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -138,8 +136,8 @@
                 <span><i class="fa-solid fa-filter"></i> กำลังแสดงข้อมูลสำหรับ: <strong id="activeFilterTermText">ปีการศึกษา 2569 (ภาคเรียนที่ 1)</strong></span>
                 
                 <!-- Cloud Status Banner -->
-                <span id="firebaseStatusBadge" class="summary-pill ml-auto" style="font-size:0.8rem; background:var(--bg-card); cursor:pointer;">
-                    <i class="fa-solid fa-circle" id="firebaseStatusDot" style="color:#ef4444;"></i> <span id="firebaseStatusText">ใช้งานฐานข้อมูลเครื่อง (Local)</span>
+                <span id="googleSheetsStatusBadge" class="summary-pill ml-auto" style="font-size:0.8rem; background:var(--bg-card); cursor:pointer;">
+                    <i class="fa-solid fa-circle" id="googleSheetsStatusDot" style="color:#ef4444;"></i> <span id="googleSheetsStatusText">ใช้งานฐานข้อมูลเครื่อง (Local)</span>
                 </span>
 
                 <!-- Always accessible Admin Setting button for Re-check Widget -->
@@ -530,32 +528,24 @@
     <!-- ==================================================== -->
 
     <!-- Modal -1: Firebase Cloud Setup Modal -->
-    <div id="firebaseConfigModal" class="modal-backdrop hidden">
+    <div id="googleSheetsConfigModal" class="modal-backdrop hidden">
         <div class="modal-box">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-cloud"></i> ตั้งค่าการเชื่อมต่อฐานข้อมูลคลาวด์ Firebase</h3>
-                <button class="modal-close-btn" id="closeFirebaseModalBtn">&times;</button>
+                <h3><i class="fa-solid fa-cloud"></i> ตั้งค่าการเชื่อมต่อ Google Sheets API</h3>
+                <button class="modal-close-btn" id="closeGoogleSheetsModalBtn">&times;</button>
             </div>
             <div class="modal-body">
-                <p class="modal-desc mb-2">เมื่อวางโค้ดตั้งค่าจาก Firebase Console ระบบจะเชื่อมต่อกับคลาวด์เพื่อให้ทีมงานซิงค์ข้อมูลสดออนไลน์ทันที:</p>
+                <p class="modal-desc mb-2">ป้อน Web App URL ของ Google Apps Script เพื่อดึงและบันทึกข้อมูลลง Google Sheets</p>
                 <div class="form-group mb-3">
-                    <label for="firebaseConfigInput">ป้อน firebaseConfig (JSON หรือโค้ดตัวแปรที่ก๊อปมาจาก Firebase):</label>
-                    <textarea id="firebaseConfigInput" class="form-input" rows="7" style="font-family:monospace; font-size:0.82rem;" placeholder='{
-  "apiKey": "AIzaSy...",
-  "authDomain": "your-project.firebaseapp.com",
-  "databaseURL": "https://your-project-default-rtdb.firebaseio.com",
-  "projectId": "your-project",
-  "storageBucket": "your-project.appspot.com",
-  "messagingSenderId": "123456789",
-  "appId": "1:123456789:web:abcdef"
-}'></textarea>
+                    <label for="googleSheetsUrlInput">Google Apps Script Web App URL:</label>
+                    <textarea id="googleSheetsUrlInput" class="form-input" rows="3" style="font-family:monospace; font-size:0.82rem;" placeholder='https://script.google.com/macros/s/.../exec'></textarea>
                 </div>
-                <div id="firebaseConfigError" class="error-msg hidden">รูปแบบข้อมูล Config ไม่ถูกต้อง</div>
+                <div id="googleSheetsConfigError" class="error-msg hidden">URL ไม่ถูกต้อง</div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline" id="disconnectFirebaseBtn">ยกเลิกการเชื่อมต่อ</button>
-                <button type="button" class="btn btn-primary" id="saveFirebaseConfigBtn">
-                    <i class="fa-solid fa-plug"></i> เชื่อมต่อคลาวด์ทันที
+                <button type="button" class="btn btn-outline" id="disconnectGoogleSheetsBtn">ยกเลิกการเชื่อมต่อ</button>
+                <button type="button" class="btn btn-primary" id="saveGoogleSheetsConfigBtn">
+                    <i class="fa-solid fa-plug"></i> บันทึก URL เชื่อมต่อ
                 </button>
             </div>
         </div>
