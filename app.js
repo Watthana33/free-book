@@ -354,7 +354,12 @@ function loadStateFromStorage() {
 
     const savedCurriculum = localStorage.getItem('freebook_curriculum_plans');
     if (savedCurriculum) {
-        try { state.curriculumPlans = JSON.parse(savedCurriculum); } catch(e){}
+        try { 
+            const parsed = JSON.parse(savedCurriculum); 
+            state.curriculumPlans = Array.isArray(parsed) ? parsed : [];
+        } catch(e){
+            state.curriculumPlans = [];
+        }
     }
 
     updateAdminUI();
@@ -457,7 +462,12 @@ async function initGoogleSheetsConnection() {
                 localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
             }
             if (data.curriculumPlans !== undefined) {
-                state.curriculumPlans = data.curriculumPlans || [];
+                let plans = data.curriculumPlans || [];
+                // Firebase sometimes converts arrays to objects if indices are non-sequential
+                if (typeof plans === 'object' && !Array.isArray(plans)) {
+                    plans = Object.values(plans).filter(Boolean);
+                }
+                state.curriculumPlans = Array.isArray(plans) ? plans : [];
                 localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
                 dataUpdated = true;
             }
