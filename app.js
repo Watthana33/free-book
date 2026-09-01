@@ -267,7 +267,9 @@ let state = {
     targetSubjects: { ...DEFAULT_TARGET_SUBJECTS },
     showSubjectCheckDashboard: true,
     parsedExcelOrders: [],
-    charts: {}
+    charts: {},
+    curriculumPlans: [],
+    isAuditEnabled: false
 };
 
 // =========================================================
@@ -307,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initManageDataEvents();
     initImportExcelEvents();
     initGoogleSheetsConfigEvents();
+    initAuditEvents();
     
     renderAllViews();
 });
@@ -346,6 +349,14 @@ function loadStateFromStorage() {
     const savedShowCheck = localStorage.getItem('freebook_show_check_dashboard');
     if (savedShowCheck !== null) state.showSubjectCheckDashboard = savedShowCheck === 'true';
 
+    const savedAuditEnabled = localStorage.getItem('freebook_audit_enabled');
+    if (savedAuditEnabled !== null) state.isAuditEnabled = savedAuditEnabled === 'true';
+
+    const savedCurriculum = localStorage.getItem('freebook_curriculum_plans');
+    if (savedCurriculum) {
+        try { state.curriculumPlans = JSON.parse(savedCurriculum); } catch(e){}
+    }
+
     updateAdminUI();
 }
 
@@ -383,6 +394,16 @@ function saveTargetsToStorage() {
 function saveShowCheckToStorage() {
     localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
     syncToGoogleSheets('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
+}
+
+function saveCurriculumToStorage() {
+    localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
+    syncToGoogleSheets('curriculumPlans', state.curriculumPlans);
+}
+
+function saveAuditToggleToStorage() {
+    localStorage.setItem('freebook_audit_enabled', state.isAuditEnabled);
+    syncToGoogleSheets('isAuditEnabled', state.isAuditEnabled);
 }
 
 function initDate() {
@@ -434,6 +455,16 @@ async function initGoogleSheetsConnection() {
             if (data.showSubjectCheckDashboard !== undefined) {
                 state.showSubjectCheckDashboard = data.showSubjectCheckDashboard;
                 localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
+            }
+            if (data.curriculumPlans !== undefined) {
+                state.curriculumPlans = data.curriculumPlans || [];
+                localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
+                dataUpdated = true;
+            }
+            if (data.isAuditEnabled !== undefined) {
+                state.isAuditEnabled = data.isAuditEnabled;
+                localStorage.setItem('freebook_audit_enabled', state.isAuditEnabled);
+                dataUpdated = true;
             }
             
             if (dataUpdated) renderAllViews();
@@ -1054,6 +1085,7 @@ function renderAllViews() {
     renderDepartmentTab();
     renderPublisherTab();
     renderSummaryReports();
+    if (state.isAdmin && state.isAuditEnabled) renderAuditTable();
 }
 
 // =========================================================
@@ -2044,4 +2076,227 @@ function showToast(message, type = 'info') {
         toast.style.transition = 'all 0.3s ease';
         setTimeout(() => toast.remove(), 300);
     }, 3500);
+}
+
+
+// =========================================================
+// AUDIT CURRICULUM LOGIC
+// =========================================================
+
+function initAuditEvents() {
+    const auditToggleSwitch = document.getElementById('auditToggleSwitch');
+    const importCurriculumBtn = document.getElementById('importCurriculumBtn');
+    const curriculumFileInput = document.getElementById('curriculumFileInput');
+    const clearCurriculumBtn = document.getElementById('clearCurriculumBtn');
+
+    if (!auditToggleSwitch) return;
+
+    // Set initial toggle state
+    auditToggleSwitch.checked = state.isAuditEnabled;
+    updateAuditUI();
+
+    auditToggleSwitch.addEventListener('change', (e) => {
+        state.isAuditEnabled = e.target.checked;
+        saveAuditToggleToStorage();
+        updateAuditUI();
+    });
+
+    if (importCurriculumBtn) {
+        importCurriculumBtn.addEventListener('click', () => {
+            curriculumFileInput.click();
+        });
+    }
+
+    if (curriculumFileInput) {
+        curriculumFileInput.addEventListener('change', handleCurriculumUpload);
+    }
+
+    if (clearCurriculumBtn) {
+        clearCurriculumBtn.addEventListener('click', () => {
+            if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการล้างข้อมูลแผนการเรียนของ ${state.selectedYear} (${state.selectedSemester})?`)) {
+                state.curriculumPlans = state.curriculumPlans.filter(p => p.year != state.selectedYear || p.semester != state.selectedSemester);
+                saveCurriculumToStorage();
+                updateAuditUI();
+                showToast('ล้างข้อมูลแผนการเรียนเรียบร้อย', 'success');
+            }
+        });
+    }
+}
+
+function updateAuditUI() {
+    const auditToggleLabel = document.getElementById('auditToggleLabel');
+    const importCurriculumBtn = document.getElementById('importCurriculumBtn');
+    const auditContentContainer = document.getElementById('auditContentContainer');
+    const auditDisabledMessage = document.getElementById('auditDisabledMessage');
+
+    if (!auditToggleLabel) return;
+
+    if (state.isAuditEnabled) {
+        auditToggleLabel.textContent = 'เปิดใช้งานโหมดตรวจสอบ';
+        auditToggleLabel.style.color = 'var(--primary-color)';
+        importCurriculumBtn.style.display = 'inline-flex';
+        auditContentContainer.style.display = 'block';
+        auditDisabledMessage.style.display = 'none';
+        renderAuditTable();
+    } else {
+        auditToggleLabel.textContent = 'ปิดใช้งานโหมดตรวจสอบ';
+        auditToggleLabel.style.color = 'var(--text-muted)';
+        importCurriculumBtn.style.display = 'none';
+        auditContentContainer.style.display = 'none';
+        auditDisabledMessage.style.display = 'block';
+    }
+}
+
+function handleCurriculumUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        try {
+            const data = evt.target.result;
+            const workbook = XLSX.read(data, { type: 'binary' });
+            const firstSheet = workbook.SheetNames[0];
+            const excelRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+            
+            if (excelRows.length === 0) {
+                showToast('ไม่พบข้อมูลในไฟล์ Excel', 'danger');
+                return;
+            }
+
+            // Remove old curriculum for THIS year/semester
+            state.curriculumPlans = state.curriculumPlans.filter(p => p.year != state.selectedYear || p.semester != state.selectedSemester);
+
+            let addedCount = 0;
+            excelRows.forEach(row => {
+                const dept = row['แผนกวิชา'] || row['แผนก'] || row['สาขาวิชา'];
+                const grade = row['ระดับชั้น'] || row['ชั้น'] || row['ระดับ'];
+                const code = row['รหัสวิชา'] || row['รหัส'];
+
+                if (dept && grade && code) {
+                    state.curriculumPlans.push({
+                        year: state.selectedYear.toString(),
+                        semester: state.selectedSemester,
+                        dept: normalizeText(dept),
+                        grade: normalizeText(grade),
+                        code: normalizeText(code)
+                    });
+                    addedCount++;
+                }
+            });
+
+            if (addedCount > 0) {
+                saveCurriculumToStorage();
+                updateAuditUI();
+                showToast(`นำเข้าแผนการเรียนสำเร็จ ${addedCount} วิชา`, 'success');
+            } else {
+                showToast('ไม่พบข้อมูลรูปแบบที่ถูกต้อง (ต้องมีคอลัมน์: แผนกวิชา, ระดับชั้น, รหัสวิชา)', 'danger');
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('เกิดข้อผิดพลาดในการอ่านไฟล์', 'danger');
+        }
+        e.target.value = ''; // Reset input
+    };
+    reader.readAsBinaryString(file);
+}
+
+function renderAuditTable() {
+    const tbody = document.getElementById('auditTableBody');
+    const statusText = document.getElementById('curriculumStatusText');
+    const clearBtn = document.getElementById('clearCurriculumBtn');
+    if (!tbody) return;
+
+    const currentYearPlans = state.curriculumPlans.filter(p => p.year == state.selectedYear && p.semester == state.selectedSemester);
+    const currentOrders = state.orders.filter(o => o.year == state.selectedYear && o.semester == state.selectedSemester);
+
+    if (currentYearPlans.length === 0) {
+        statusText.textContent = `ยังไม่มีข้อมูลแผนการเรียนสำหรับ ${state.selectedYear} (${state.selectedSemester})`;
+        statusText.style.color = 'var(--danger)';
+        clearBtn.style.display = 'none';
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding: 2rem;"><i class="fa-solid fa-folder-open mb-2" style="font-size:2rem; opacity:0.5;"></i><br>ไม่มีข้อมูลแผนการเรียนสำหรับตรวจสอบ</td></tr>`;
+        return;
+    }
+
+    statusText.textContent = `มีข้อมูลแผนการเรียนในระบบแล้ว (${currentYearPlans.length} รายวิชา)`;
+    statusText.style.color = 'var(--accent-color)';
+    clearBtn.style.display = 'inline-flex';
+
+    let planGroups = {};
+    currentYearPlans.forEach(p => {
+        const key = `${p.dept}__${p.grade}`;
+        if (!planGroups[key]) planGroups[key] = { expectedCount: 0, validCodes: new Set() };
+        planGroups[key].expectedCount++;
+        planGroups[key].validCodes.add(p.code);
+    });
+
+    let orderGroups = {};
+    currentOrders.forEach(o => {
+        const d = normalizeText(o.dept);
+        const g = normalizeText(o.grade);
+        const key = `${d}__${g}`;
+        if (!orderGroups[key]) orderGroups[key] = { orderedCount: 0, orderedCodes: new Set(), outOfPlanCodes: new Set() };
+        
+        if (!orderGroups[key].orderedCodes.has(normalizeText(o.code))) {
+            orderGroups[key].orderedCount++;
+            orderGroups[key].orderedCodes.add(normalizeText(o.code));
+            
+            const planForGroup = planGroups[key];
+            if (!planForGroup || !planForGroup.validCodes.has(normalizeText(o.code))) {
+                orderGroups[key].outOfPlanCodes.add(normalizeText(o.code));
+            }
+        }
+    });
+
+    const allKeys = new Set([...Object.keys(planGroups), ...Object.keys(orderGroups)]);
+    
+    tbody.innerHTML = '';
+    if (allKeys.size === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding: 2rem;">ไม่พบข้อมูลสั่งซื้อในเทอมนี้</td></tr>`;
+        return;
+    }
+
+    Array.from(allKeys).sort().forEach(key => {
+        const parts = key.split('__');
+        const dept = parts[0];
+        const grade = parts[1];
+        const plan = planGroups[key] || { expectedCount: 0, validCodes: new Set() };
+        const order = orderGroups[key] || { orderedCount: 0, outOfPlanCodes: new Set() };
+
+        const expected = plan.expectedCount;
+        const actual = order.orderedCount;
+        const diff = actual - expected;
+
+        let statusHtml = '';
+        let rowStyle = '';
+        if (expected === 0 && actual > 0) {
+             statusHtml = `<span class="badge" style="background:#ef4444; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ไม่มีแผน (${actual} วิชา)</span>`;
+             rowStyle = 'background-color: #fef2f2;';
+        } else if (diff > 0) {
+            statusHtml = `<span class="badge" style="background:#ef4444; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">เกินแผนมา ${diff} วิชา</span>`;
+            rowStyle = 'background-color: #fef2f2;';
+        } else if (diff === 0) {
+            statusHtml = `<span class="badge" style="background:#10b981; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ครบถ้วนตามแผน</span>`;
+        } else {
+            statusHtml = `<span class="badge" style="background:#f59e0b; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ขาด ${Math.abs(diff)} วิชา</span>`;
+        }
+
+        const outOfPlanArr = Array.from(order.outOfPlanCodes);
+        let outHtml = '-';
+        if (outOfPlanArr.length > 0) {
+            outHtml = outOfPlanArr.map(c => `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; margin-right:4px; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem;">${c}</span>`).join(' ');
+        }
+
+        const tr = document.createElement('tr');
+        if (rowStyle) tr.style.cssText = rowStyle;
+        tr.innerHTML = `
+            <td><strong>${dept}</strong></td>
+            <td>${grade}</td>
+            <td class="text-center"><strong>${expected}</strong></td>
+            <td class="text-center"><strong>${actual}</strong></td>
+            <td class="text-center">${statusHtml}</td>
+            <td>${outHtml}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
