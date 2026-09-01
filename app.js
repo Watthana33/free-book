@@ -332,6 +332,12 @@ function loadStateFromStorage() {
         saveOrdersToStorage();
     }
     
+    const savedYear = localStorage.getItem('freebook_selected_year');
+    if (savedYear) state.selectedYear = savedYear;
+
+    const savedSemester = localStorage.getItem('freebook_selected_semester');
+    if (savedSemester) state.selectedSemester = savedSemester;
+
     const savedAdmin = localStorage.getItem('freebook_is_admin');
     state.isAdmin = savedAdmin === 'true';
 
@@ -384,6 +390,11 @@ async function syncToGoogleSheets(type, data) {
             console.error("Google Sheets POST error:", e);
         }
     }
+}
+
+function saveSelectedTermToStorage() {
+    localStorage.setItem('freebook_selected_year', state.selectedYear);
+    localStorage.setItem('freebook_selected_semester', state.selectedSemester);
 }
 
 function saveOrdersToStorage() {
@@ -608,6 +619,7 @@ function initGlobalTermSelector() {
     const onTermChange = () => {
         state.selectedYear = yearSelect.value;
         state.selectedSemester = semSelect.value;
+        saveSelectedTermToStorage();
         renderAllViews();
     };
 
@@ -2103,8 +2115,18 @@ function initAuditEvents() {
     const importCurriculumBtn = document.getElementById('importCurriculumBtn');
     const curriculumFileInput = document.getElementById('curriculumFileInput');
     const clearCurriculumBtn = document.getElementById('clearCurriculumBtn');
+    const bigEnableAuditBtn = document.getElementById('bigEnableAuditBtn');
 
     if (!auditToggleSwitch) return;
+
+    if (bigEnableAuditBtn) {
+        bigEnableAuditBtn.addEventListener('click', () => {
+            auditToggleSwitch.checked = true;
+            state.isAuditEnabled = true;
+            saveAuditToggleToStorage();
+            updateAuditUI();
+        });
+    }
 
     // Set initial toggle state
     auditToggleSwitch.checked = state.isAuditEnabled;
