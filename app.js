@@ -295,6 +295,7 @@ async function sha256(message) {
 // 3. INITIALIZATION
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {
+    try {
     loadStateFromStorage();
     initGoogleSheetsConnection();
     initTheme();
@@ -312,6 +313,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initAuditEvents();
     
     renderAllViews();
+    } catch (error) {
+        alert("CRITICAL ERROR IN APP.JS: " + error.message + "\n" + error.stack);
+        console.error(error);
+    }
 });
 
 function loadStateFromStorage() {
