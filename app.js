@@ -252,8 +252,10 @@ const KNOWN_DEPARTMENTS = [
 // =========================================================
 // 2. STATE MANAGEMENT & FIREBASE VARIABLES
 // =========================================================
-let googleSheetsUrl = "";
-let isGoogleSheetsConnected = false;
+let firebaseConfigStr = "";
+let isFirebaseConnected = false;
+let firebaseApp = null;
+let firebaseDb = null;
 
 let state = {
     orders: [],
@@ -269,7 +271,8 @@ let state = {
     parsedExcelOrders: [],
     charts: {},
     curriculumPlans: [],
-    isAuditEnabled: false
+    isAuditEnabled: false,
+    approvedSubstitutions: {}
 };
 
 // =========================================================
@@ -297,7 +300,7 @@ async function sha256(message) {
 document.addEventListener('DOMContentLoaded', () => {
     try {
     loadStateFromStorage();
-    initGoogleSheetsConnection();
+    initFirebaseConnection();
     initTheme();
     initDate();
     initGlobalTermSelector();
@@ -309,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTargetConfigEvents();
     initManageDataEvents();
     initImportExcelEvents();
-    initGoogleSheetsConfigEvents();
+    initFirebaseConfigEvents();
     initAuditEvents();
     
     renderAllViews();
@@ -331,6 +334,10 @@ function loadStateFromStorage() {
         state.orders = [...INITIAL_ORDERS_DATA];
         saveOrdersToStorage();
     }
+    
+    const savedSubs = localStorage.getItem('freebook_approved_subs');
+    if (savedSubs) { try { state.approvedSubstitutions = JSON.parse(savedSubs); } catch(e) {} }
+    if (!state.approvedSubstitutions) state.approvedSubstitutions = {};
     
     const savedYear = localStorage.getItem('freebook_selected_year');
     if (savedYear) state.selectedYear = savedYear;
@@ -376,21 +383,17 @@ function loadStateFromStorage() {
     updateAdminUI();
 }
 
-async function syncToGoogleSheets(type, data) {
-    if (isGoogleSheetsConnected && googleSheetsUrl) {
+
+async function syncToFirebase(type, data) {
+    if (isFirebaseConnected && firebaseDb) {
         try {
-            await fetch(googleSheetsUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8',
-                },
-                body: JSON.stringify({ type, data })
-            });
+            await firebaseDb.ref('state/' + type).set(data);
         } catch (e) {
-            console.error("Google Sheets POST error:", e);
+            console.error("Firebase SET error:", e);
         }
     }
 }
+
 
 function saveSelectedTermToStorage() {
     localStorage.setItem('freebook_selected_year', state.selectedYear);
@@ -399,32 +402,32 @@ function saveSelectedTermToStorage() {
 
 function saveOrdersToStorage() {
     localStorage.setItem('freebook_orders', JSON.stringify(state.orders));
-    syncToGoogleSheets('orders', state.orders);
+    syncToFirebase('orders', state.orders);
 }
 
 function saveCustomYearsToStorage() {
     localStorage.setItem('freebook_custom_years', JSON.stringify(state.customYears));
-    syncToGoogleSheets('customYears', state.customYears);
+    syncToFirebase('customYears', state.customYears);
 }
 
 function saveTargetsToStorage() {
     localStorage.setItem('freebook_target_subjects', JSON.stringify(state.targetSubjects));
-    syncToGoogleSheets('targetSubjects', state.targetSubjects);
+    syncToFirebase('targetSubjects', state.targetSubjects);
 }
 
 function saveShowCheckToStorage() {
     localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
-    syncToGoogleSheets('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
+    syncToFirebase('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
 }
 
 function saveCurriculumToStorage() {
     localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
-    syncToGoogleSheets('curriculumPlans', state.curriculumPlans);
+    syncToFirebase('curriculumPlans', state.curriculumPlans);
 }
 
 function saveAuditToggleToStorage() {
     localStorage.setItem('freebook_audit_enabled', state.isAuditEnabled);
-    syncToGoogleSheets('isAuditEnabled', state.isAuditEnabled);
+    syncToFirebase('isAuditEnabled', state.isAuditEnabled);
 }
 
 function initDate() {
@@ -435,88 +438,116 @@ function initDate() {
     if (dateEl) dateEl.innerText = formatted;
 }
 
+function normalizeCode(str) {
+    if (!str) return '';
+    // Remove all spaces and dashes, convert to uppercase for robust matching
+    return String(str).replace(/[\s\-]/g, '').trim().toUpperCase();
+}
+
 function getUniqueSubjectKey(o) {
-    const code = getNormalizedKey(o.code);
-    const title = getNormalizedKey(o.title);
-    return `${code}_${title}`;
+    // Only use normalized code to determine uniqueness, preventing issues with varying titles
+    return normalizeCode(o.code);
 }
 
 // =========================================================
 // 4. GOOGLE SHEETS SYNC
 // =========================================================
-async function initGoogleSheetsConnection() {
-    googleSheetsUrl = localStorage.getItem('freebook_google_sheets_url') || "";
 
-    if (!googleSheetsUrl) {
-        updateGoogleSheetsStatusUI(false);
-        isGoogleSheetsConnected = false;
+async function initFirebaseConnection() {
+    firebaseConfigStr = localStorage.getItem('freebook_firebase_config') || "";
+
+    if (!firebaseConfigStr) {
+        updateFirebaseStatusUI(false);
+        isFirebaseConnected = false;
         return;
     }
 
     try {
-        updateGoogleSheetsStatusUI(true, "กำลังซิงค์...");
-        const response = await fetch(googleSheetsUrl);
-        const data = await response.json();
-        
-        if (data) {
-            let dataUpdated = false;
-            if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
-                state.orders = data.orders;
-                localStorage.setItem('freebook_orders', JSON.stringify(data.orders));
-                dataUpdated = true;
-            }
-            if (data.customYears && Array.isArray(data.customYears) && data.customYears.length > 0) {
-                state.customYears = data.customYears;
-                localStorage.setItem('freebook_custom_years', JSON.stringify(data.customYears));
-            }
-            if (data.targetSubjects && Object.keys(data.targetSubjects).length > 0) {
-                state.targetSubjects = data.targetSubjects;
-                localStorage.setItem('freebook_target_subjects', JSON.stringify(data.targetSubjects));
-            }
-            if (data.showSubjectCheckDashboard !== undefined) {
-                state.showSubjectCheckDashboard = data.showSubjectCheckDashboard;
-                localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
-            }
-            if (data.curriculumPlans !== undefined) {
-                let plans = data.curriculumPlans || [];
-                // Firebase sometimes converts arrays to objects if indices are non-sequential
-                if (typeof plans === 'object' && !Array.isArray(plans)) {
-                    plans = Object.values(plans).filter(Boolean);
-                }
-                state.curriculumPlans = Array.isArray(plans) ? plans : [];
-                localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
-                dataUpdated = true;
-            }
-            if (data.isAuditEnabled !== undefined) {
-                state.isAuditEnabled = data.isAuditEnabled;
-                localStorage.setItem('freebook_audit_enabled', state.isAuditEnabled);
-                dataUpdated = true;
-            }
-            
-            if (dataUpdated) renderAllViews();
-            renderYearDropdownOptions();
-            renderSubjectCheckWidget();
-            
-            isGoogleSheetsConnected = true;
-            updateGoogleSheetsStatusUI(true, 'เชื่อมต่อ Google Sheets สำเร็จ');
+        const config = JSON.parse(firebaseConfigStr);
+        if (!firebase.apps.length) {
+            firebaseApp = firebase.initializeApp(config);
         } else {
-            throw new Error("No data received");
+            firebaseApp = firebase.app();
         }
+        firebaseDb = firebase.database();
+        
+        updateFirebaseStatusUI(true, "กำลังซิงค์...");
+        
+        // Setup Realtime Listener
+        firebaseDb.ref('state').on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                let dataUpdated = false;
+                if (data.orders && Array.isArray(data.orders) && data.orders.length > 0) {
+                    state.orders = data.orders;
+                    localStorage.setItem('freebook_orders', JSON.stringify(data.orders));
+                    dataUpdated = true;
+                }
+                if (data.customYears && Array.isArray(data.customYears) && data.customYears.length > 0) {
+                    state.customYears = data.customYears;
+                    localStorage.setItem('freebook_custom_years', JSON.stringify(data.customYears));
+                }
+                if (data.targetSubjects && Object.keys(data.targetSubjects).length > 0) {
+                    state.targetSubjects = data.targetSubjects;
+                    localStorage.setItem('freebook_target_subjects', JSON.stringify(data.targetSubjects));
+                }
+                if (data.showSubjectCheckDashboard !== undefined) {
+                    state.showSubjectCheckDashboard = data.showSubjectCheckDashboard;
+                    localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
+                }
+                if (data.curriculumPlans !== undefined) {
+                    let plans = data.curriculumPlans || [];
+                    if (typeof plans === 'object' && !Array.isArray(plans)) {
+                        plans = Object.values(plans).filter(Boolean);
+                    }
+                    state.curriculumPlans = Array.isArray(plans) ? plans : [];
+                    localStorage.setItem('freebook_curriculum_plans', JSON.stringify(state.curriculumPlans));
+                    dataUpdated = true;
+                }
+                if (data.approvedSubstitutions) {
+                    state.approvedSubstitutions = data.approvedSubstitutions;
+                    localStorage.setItem('freebook_approved_subs', JSON.stringify(state.approvedSubstitutions));
+                }
+                if (data.isAuditEnabled !== undefined) {
+                    state.isAuditEnabled = data.isAuditEnabled;
+                    localStorage.setItem('freebook_audit_enabled', state.isAuditEnabled);
+                    dataUpdated = true;
+                }
+                
+                if (dataUpdated) renderAllViews();
+                renderYearDropdownOptions();
+                renderSubjectCheckWidget();
+                
+                isFirebaseConnected = true;
+                updateFirebaseStatusUI(true, 'เชื่อมต่อ Firebase แบบ Realtime แล้ว');
+            } else {
+                // Firebase is empty, initialize it with local state
+                isFirebaseConnected = true;
+                syncToFirebase('orders', state.orders);
+                syncToFirebase('customYears', state.customYears);
+                syncToFirebase('targetSubjects', state.targetSubjects);
+                syncToFirebase('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
+                syncToFirebase('curriculumPlans', state.curriculumPlans);
+                syncToFirebase('isAuditEnabled', state.isAuditEnabled);
+                updateFirebaseStatusUI(true, 'เชื่อมต่อ Firebase และอัปโหลดข้อมูลเริ่มต้นแล้ว');
+            }
+        });
+        
     } catch (e) {
-        console.error("Google Sheets connection failed:", e);
-        isGoogleSheetsConnected = false;
-        updateGoogleSheetsStatusUI(false, 'เชื่อมต่อล้มเหลว');
+        console.error("Firebase connection failed:", e);
+        isFirebaseConnected = false;
+        updateFirebaseStatusUI(false, 'เชื่อมต่อล้มเหลว');
     }
 }
 
-function updateGoogleSheetsStatusUI(connected, customText) {
-    const dot = document.getElementById('googleSheetsStatusDot');
-    const text = document.getElementById('googleSheetsStatusText');
+function updateFirebaseStatusUI(connected, customText) {
+    const dot = document.getElementById('firebaseStatusDot');
+    const text = document.getElementById('firebaseStatusText');
     const icon = document.getElementById('cloudStatusIcon');
 
     if (connected) {
         if (dot) dot.style.color = '#10b981';
-        if (text) text.innerText = customText || 'เชื่อมต่อ Google Sheets แล้ว';
+        if (text) text.innerText = customText || 'เชื่อมต่อ Firebase แล้ว';
         if (icon) {
             icon.className = 'fa-solid fa-cloud';
             icon.style.color = '#10b981';
@@ -525,81 +556,98 @@ function updateGoogleSheetsStatusUI(connected, customText) {
         if (dot) dot.style.color = '#ef4444';
         if (text) text.innerText = customText || 'ใช้งานฐานข้อมูลเครื่อง (Local)';
         if (icon) {
-            icon.className = 'fa-solid fa-cloud-slash';
+            icon.className = 'fa-solid fa-cloud'; // Changed from fa-cloud-slash to fix rendering
             icon.style.color = '#ef4444';
         }
     }
 }
 
-function initGoogleSheetsConfigEvents() {
+function initFirebaseConfigEvents() {
     const cloudStatusBtn = document.getElementById('cloudStatusBtn');
-    const googleSheetsStatusBadge = document.getElementById('googleSheetsStatusBadge');
-    const googleSheetsConfigModal = document.getElementById('googleSheetsConfigModal');
-    const closeGoogleSheetsModalBtn = document.getElementById('closeGoogleSheetsModalBtn');
-    const saveGoogleSheetsConfigBtn = document.getElementById('saveGoogleSheetsConfigBtn');
-    const disconnectGoogleSheetsBtn = document.getElementById('disconnectGoogleSheetsBtn');
-    const googleSheetsUrlInput = document.getElementById('googleSheetsUrlInput');
-    const googleSheetsConfigError = document.getElementById('googleSheetsConfigError');
+    const firebaseStatusBadge = document.getElementById('firebaseStatusBadge');
+    const firebaseConfigModal = document.getElementById('firebaseConfigModal');
+    const closeFirebaseModalBtn = document.getElementById('closeFirebaseModalBtn');
+    const saveFirebaseConfigBtn = document.getElementById('saveFirebaseConfigBtn');
+    const disconnectFirebaseBtn = document.getElementById('disconnectFirebaseBtn');
+    const firebaseConfigInput = document.getElementById('firebaseConfigInput');
+    const firebaseConfigError = document.getElementById('firebaseConfigError');
 
     const openModal = () => {
         if (!state.isAdmin) {
             showToast('🔒 เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถตั้งค่าฐานข้อมูลได้', 'info');
             return;
         }
-        googleSheetsUrlInput.value = localStorage.getItem('freebook_google_sheets_url') || "";
-        googleSheetsConfigError.classList.add('hidden');
-        googleSheetsConfigModal.classList.remove('hidden');
+        firebaseConfigInput.value = localStorage.getItem('freebook_firebase_config') || "";
+        firebaseConfigError.classList.add('hidden');
+        firebaseConfigModal.classList.remove('hidden');
     };
 
     cloudStatusBtn.addEventListener('click', openModal);
-    if (googleSheetsStatusBadge) googleSheetsStatusBadge.addEventListener('click', openModal);
+    if (firebaseStatusBadge) firebaseStatusBadge.addEventListener('click', openModal);
 
-    const closeModal = () => googleSheetsConfigModal.classList.add('hidden');
-    closeGoogleSheetsModalBtn.addEventListener('click', closeModal);
+    const closeModal = () => firebaseConfigModal.classList.add('hidden');
+    if (closeFirebaseModalBtn) closeFirebaseModalBtn.addEventListener('click', closeModal);
 
-    saveGoogleSheetsConfigBtn.addEventListener('click', async () => {
-        if (!state.isAdmin) return;
+    if (saveFirebaseConfigBtn) {
+        saveFirebaseConfigBtn.addEventListener('click', async () => {
+            if (!state.isAdmin) return;
 
-        const rawUrl = googleSheetsUrlInput.value.trim();
+            const rawConfig = firebaseConfigInput.value.trim();
+            let parsedConfig = null;
 
-        if (!rawUrl || !rawUrl.startsWith('https://script.google.com/')) {
-            googleSheetsConfigError.innerText = 'URL ต้องเริ่มต้นด้วย https://script.google.com/...';
-            googleSheetsConfigError.classList.remove('hidden');
-            return;
-        }
+            try {
+                // Try strict JSON first
+                parsedConfig = JSON.parse(rawConfig);
+            } catch(e) {
+                // If it fails, try to extract it from JS object format (const firebaseConfig = {...})
+                try {
+                    const match = rawConfig.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        parsedConfig = new Function('return ' + match[0])();
+                    } else {
+                        throw new Error();
+                    }
+                } catch (err) {
+                    firebaseConfigError.innerText = 'รูปแบบไม่ถูกต้อง โปรดคัดลอกโค้ดมาให้ครบถ้วน';
+                    firebaseConfigError.classList.remove('hidden');
+                    return;
+                }
+            }
 
-        googleSheetsConfigError.classList.add('hidden');
-        saveGoogleSheetsConfigBtn.disabled = true;
-        saveGoogleSheetsConfigBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...';
+            if (!parsedConfig || !parsedConfig.databaseURL) {
+                firebaseConfigError.innerText = 'ไม่พบ databaseURL ใน Config กรุณาตรวจสอบให้แน่ใจว่าคัดลอกมาครบ';
+                firebaseConfigError.classList.remove('hidden');
+                return;
+            }
 
-        localStorage.setItem('freebook_google_sheets_url', rawUrl);
-        await initGoogleSheetsConnection();
+            firebaseConfigError.classList.add('hidden');
+            saveFirebaseConfigBtn.disabled = true;
+            saveFirebaseConfigBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...';
 
-        if (isGoogleSheetsConnected) {
-            closeModal();
-            showToast('เชื่อมต่อ Google Sheets สำเร็จแล้ว!', 'success');
-        } else {
-            googleSheetsConfigError.innerText = 'ไม่สามารถดึงข้อมูลได้ โปรดตรวจสอบ URL หรือสิทธิ์การเข้าถึง';
-            googleSheetsConfigError.classList.remove('hidden');
-        }
-        
-        saveGoogleSheetsConfigBtn.disabled = false;
-        saveGoogleSheetsConfigBtn.innerHTML = '<i class="fa-solid fa-plug"></i> บันทึก URL เชื่อมต่อ';
-    });
+            localStorage.setItem('freebook_firebase_config', JSON.stringify(parsedConfig));
+            
+            // Simple reload to initialize Firebase cleanly
+            window.location.reload();
+        });
+    }
 
-    disconnectGoogleSheetsBtn.addEventListener('click', () => {
-        if (!state.isAdmin) return;
+    if (disconnectFirebaseBtn) {
+        disconnectFirebaseBtn.addEventListener('click', () => {
+            if (!state.isAdmin) return;
 
-        if (confirm('ยกเลิกการเชื่อมต่อ Google Sheets และกลับไปใช้ LocalStorage หรือไม่?')) {
-            localStorage.removeItem('freebook_google_sheets_url');
-            isGoogleSheetsConnected = false;
-            googleSheetsUrl = "";
-            updateGoogleSheetsStatusUI(false);
-            closeModal();
-            showToast('สลับกลับมาใช้ฐานข้อมูลในเครื่อง (LocalStorage)', 'info');
-        }
-    });
+            if (confirm('ยกเลิกการเชื่อมต่อ Firebase และกลับไปใช้ LocalStorage หรือไม่?')) {
+                localStorage.removeItem('freebook_firebase_config');
+                isFirebaseConnected = false;
+                firebaseConfigStr = "";
+                updateFirebaseStatusUI(false);
+                closeModal();
+                showToast('สลับกลับมาใช้ฐานข้อมูลในเครื่อง (LocalStorage)', 'info');
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        });
+    }
 }
+
 
 // =========================================================
 // 5. GLOBAL YEAR & SEMESTER CONTROLLER (SORTED DESCENDING)
@@ -625,6 +673,16 @@ function initGlobalTermSelector() {
 
     yearSelect.addEventListener('change', onTermChange);
     semSelect.addEventListener('change', onTermChange);
+
+    // Sync UI with state
+    if (state.selectedSemester) {
+        semSelect.value = state.selectedSemester;
+        Array.from(semSelect.options).forEach(opt => {
+            if (opt.value === state.selectedSemester) {
+                opt.selected = true;
+            }
+        });
+    }
 }
 
 function renderYearDropdownOptions() {
@@ -954,13 +1012,17 @@ function initImportExcelEvents() {
 
         const importMode = document.querySelector('input[name="importMode"]:checked').value;
 
-        if (importMode === 'replace') {
+        if (importMode === 'replace_all') {
             state.orders = [];
+        } else if (importMode === 'replace_term') {
+            // ล้างข้อมูลเฉพาะภาคเรียนและปีการศึกษาที่มีในไฟล์ Excel นี้ทิ้งไปก่อน
+            const termsInExcel = new Set(state.parsedExcelOrders.map(o => `${o.year}__${o.semester}`));
+            state.orders = state.orders.filter(o => !termsInExcel.has(`${o.year}__${o.semester}`));
         }
 
-        // Process imported rows with AUTO-MERGING for identical (dept, grade, code, title, publisher, year, semester)
         let mergedCount = 0;
         let insertedCount = 0;
+        let updatedCount = 0;
 
         state.parsedExcelOrders.forEach(newRow => {
             const existingIndex = state.orders.findIndex(o => 
@@ -974,11 +1036,19 @@ function initImportExcelEvents() {
             );
 
             if (existingIndex !== -1) {
-                // Auto-merge quantity
-                state.orders[existingIndex].qty += newRow.qty;
-                state.orders[existingIndex].price = newRow.price;
-                state.orders[existingIndex].amount = state.orders[existingIndex].qty * newRow.price;
-                mergedCount++;
+                if (importMode === 'update') {
+                    // Update quantity (แทนที่จำนวนเดิมด้วยจำนวนใหม่)
+                    state.orders[existingIndex].qty = newRow.qty;
+                    state.orders[existingIndex].price = newRow.price;
+                    state.orders[existingIndex].amount = newRow.qty * newRow.price;
+                    updatedCount++;
+                } else {
+                    // Append logic (บวกจำนวนเพิ่ม) เผื่อมีรายการซ้ำกันในไฟล์ Excel เอง
+                    state.orders[existingIndex].qty += newRow.qty;
+                    state.orders[existingIndex].price = newRow.price;
+                    state.orders[existingIndex].amount = state.orders[existingIndex].qty * newRow.price;
+                    mergedCount++;
+                }
             } else {
                 state.orders.push(newRow);
                 insertedCount++;
@@ -1154,37 +1224,120 @@ function renderSubjectCheckWidget() {
 
     const pairs = getDetectedDeptGradePairs();
 
+    const currentYearPlans = state.curriculumPlans.filter(plan => plan.year == state.selectedYear && plan.semester == state.selectedSemester);
+
+    // Group pairs by department
+    const deptGroups = {};
     pairs.forEach(p => {
-        const targetCount = state.targetSubjects[p.key] !== undefined ? state.targetSubjects[p.key] : 0;
+        if(!deptGroups[p.dept]) deptGroups[p.dept] = [];
+        deptGroups[p.dept].push(p);
+    });
+
+    Object.keys(deptGroups).sort().forEach(dept => {
+        const card = document.createElement('div');
+        card.style.border = '1px solid var(--border-color)';
+        card.style.borderRadius = 'var(--radius-md)';
+        card.style.marginBottom = '1rem';
+        card.style.overflow = 'hidden';
+        card.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
         
-        const deptGradeOrders = activeOrders.filter(o => getNormalizedKey(o.dept) === getNormalizedKey(p.dept) && getNormalizedKey(o.grade) === getNormalizedKey(p.grade));
-        const uniqueSubjectKeys = new Set(deptGradeOrders.map(o => getUniqueSubjectKey(o)));
-        const actualCount = uniqueSubjectKeys.size;
+        const header = document.createElement('div');
+        header.style.padding = '0.8rem 1rem';
+        header.style.background = 'var(--bg-muted)';
+        header.style.cursor = 'pointer';
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.fontWeight = 'bold';
+        header.innerHTML = `<span><i class="fa-solid fa-layer-group text-primary"></i> แผนกวิชา ${escapeHtml(dept)}</span> <i class="fa-solid fa-chevron-down toggle-icon text-muted"></i>`;
+        
+        const body = document.createElement('div');
+        body.style.padding = '1rem';
+        body.style.display = 'none'; // hidden by default for cleaner UI
+        body.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
+        body.style.gap = '1rem';
+        
+        header.addEventListener('click', () => {
+             if (body.style.display === 'none') {
+                 body.style.display = 'grid';
+                 header.querySelector('.toggle-icon').className = 'fa-solid fa-chevron-up toggle-icon text-muted';
+                 header.style.background = 'var(--primary-light)';
+             } else {
+                 body.style.display = 'none';
+                 header.querySelector('.toggle-icon').className = 'fa-solid fa-chevron-down toggle-icon text-muted';
+                 header.style.background = 'var(--bg-muted)';
+             }
+        });
 
-        if (targetCount === 0 && actualCount === 0) return;
+        let hasData = false;
+        let totalExceed = 0;
+        let totalMissing = 0;
 
-        const diff = actualCount - targetCount;
-        let statusClass = 'status-ok';
-        let statusBadgeText = `🟢 ครบถ้วน (${actualCount}/${targetCount})`;
+        deptGroups[dept].forEach(p => {
+            const planForGroup = currentYearPlans.filter(plan => normalizeText(plan.dept) === normalizeText(p.dept) && normalizeText(plan.grade) === normalizeText(p.grade));
+            let targetCount = 0;
+            if (planForGroup.length > 0) {
+                targetCount = planForGroup.length;
+            } else {
+                targetCount = state.targetSubjects[p.key] !== undefined ? state.targetSubjects[p.key] : 0;
+            }
+            
+            const deptGradeOrders = activeOrders.filter(o => getNormalizedKey(o.dept) === getNormalizedKey(p.dept) && getNormalizedKey(o.grade) === getNormalizedKey(p.grade));
+            const uniqueSubjectKeys = new Set(deptGradeOrders.map(o => getUniqueSubjectKey(o)));
+            const actualCount = uniqueSubjectKeys.size;
 
-        if (diff < 0) {
-            statusClass = 'status-missing';
-            statusBadgeText = `🟠 ขาดไป ${Math.abs(diff)} วิชา (${actualCount}/${targetCount})`;
-        } else if (diff > 0) {
-            statusClass = 'status-exceed';
-            statusBadgeText = `🟣 สั่งเกิน ${diff} วิชา (${actualCount}/${targetCount})`;
+            if (targetCount === 0 && actualCount === 0) return;
+            hasData = true;
+
+            const diff = actualCount - targetCount;
+            let statusClass = 'status-ok';
+            let statusBadgeText = `✅ ครบถ้วน (${actualCount}/${targetCount})`;
+
+            if (diff < 0) {
+                statusClass = 'status-missing';
+                statusBadgeText = `⚠️ ขาดอีก ${Math.abs(diff)} วิชา (${actualCount}/${targetCount})`;
+                totalMissing += Math.abs(diff);
+            } else if (diff > 0) {
+                statusClass = 'status-exceed';
+                statusBadgeText = `❌ เกิน ${diff} วิชา (${actualCount}/${targetCount})`;
+                totalExceed += diff;
+            }
+
+            const item = document.createElement('div');
+            item.className = `check-item-card ${statusClass}`;
+            item.style.padding = '0.8rem';
+            item.style.border = '1px solid var(--border-color)';
+            item.style.borderRadius = 'var(--radius-sm)';
+            item.innerHTML = `
+                <div style="margin-bottom:0.5rem;">
+                    <div class="check-title" style="font-size:1.05rem;"><i class="fa-solid fa-graduation-cap"></i> ${p.grade}</div>
+                    <div class="check-subtitle" style="font-size:0.8rem; margin-top:0.25rem;">เป้าหมาย: ${targetCount} วิชา | สั่งจริง: ${actualCount} วิชา</div>
+                </div>
+                <div class="check-status-badge">${statusBadgeText}</div>
+            `;
+            body.appendChild(item);
+        });
+
+        if (hasData) {
+            // Add summary pills to header
+            const summarySpan = document.createElement('span');
+            summarySpan.style.marginLeft = 'auto';
+            summarySpan.style.marginRight = '1rem';
+            summarySpan.style.fontSize = '0.8rem';
+            summarySpan.style.fontWeight = 'normal';
+            
+            let summaryHtml = '';
+            if (totalExceed > 0) summaryHtml += `<span class="badge" style="background:#fef2f2; color:#ef4444; border:1px solid #fca5a5; margin-right:0.5rem;">เกิน ${totalExceed} จุด</span>`;
+            if (totalMissing > 0) summaryHtml += `<span class="badge" style="background:#fffbeb; color:#f59e0b; border:1px solid #fcd34d;">ขาด ${totalMissing} จุด</span>`;
+            if (totalExceed === 0 && totalMissing === 0) summaryHtml = `<span class="badge" style="background:#ecfdf5; color:#10b981; border:1px solid #6ee7b7;">✅ ปกติทั้งหมด</span>`;
+            
+            summarySpan.innerHTML = summaryHtml;
+            header.insertBefore(summarySpan, header.querySelector('.toggle-icon'));
+
+            card.appendChild(header);
+            card.appendChild(body);
+            grid.appendChild(card);
         }
-
-        const item = document.createElement('div');
-        item.className = `check-item-card ${statusClass}`;
-        item.innerHTML = `
-            <div>
-                <div class="check-title">${escapeHtml(p.dept)} - ${p.grade}</div>
-                <div class="check-subtitle">เป้าหมายหลักสูตร: ${targetCount} วิชา | สั่งซื้อจริง: ${actualCount} วิชา (${deptGradeOrders.length} รายการคำสั่ง)</div>
-            </div>
-            <div class="check-status-badge">${statusBadgeText}</div>
-        `;
-        grid.appendChild(item);
     });
 
     if (grid.children.length === 0) {
@@ -2264,7 +2417,7 @@ function renderAuditTable() {
         const key = `${p.dept}__${p.grade}`;
         if (!planGroups[key]) planGroups[key] = { expectedCount: 0, validCodes: new Set() };
         planGroups[key].expectedCount++;
-        planGroups[key].validCodes.add(p.code);
+        planGroups[key].validCodes.add(normalizeCode(p.code));
     });
 
     let orderGroups = {};
@@ -2274,12 +2427,14 @@ function renderAuditTable() {
         const key = `${d}__${g}`;
         if (!orderGroups[key]) orderGroups[key] = { orderedCount: 0, orderedCodes: new Set(), outOfPlanCodes: new Set() };
         
-        if (!orderGroups[key].orderedCodes.has(normalizeText(o.code))) {
+        const normCode = normalizeCode(o.code);
+        if (!orderGroups[key].orderedCodes.has(normCode)) {
             orderGroups[key].orderedCount++;
-            orderGroups[key].orderedCodes.add(normalizeText(o.code));
+            orderGroups[key].orderedCodes.add(normCode);
             
             const planForGroup = planGroups[key];
-            if (!planForGroup || !planForGroup.validCodes.has(normalizeText(o.code))) {
+            if (!planForGroup || !planForGroup.validCodes.has(normCode)) {
+                // Keep the original formatted code for display in outOfPlanCodes
                 orderGroups[key].outOfPlanCodes.add(normalizeText(o.code));
             }
         }
@@ -2318,10 +2473,39 @@ function renderAuditTable() {
             statusHtml = `<span class="badge" style="background:#f59e0b; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ขาด ${Math.abs(diff)} วิชา</span>`;
         }
 
-        const outOfPlanArr = Array.from(order.outOfPlanCodes);
+                const outOfPlanArr = Array.from(order.outOfPlanCodes);
         let outHtml = '-';
+        let unapprovedCount = 0;
+        
         if (outOfPlanArr.length > 0) {
-            outHtml = outOfPlanArr.map(c => `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; margin-right:4px; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem;">${c}</span>`).join(' ');
+            outHtml = outOfPlanArr.map(c => {
+                const subKey = `${dept}__${grade}__${c}`;
+                const isApproved = state.approvedSubstitutions && state.approvedSubstitutions[subKey];
+                
+                if (isApproved) {
+                    return `<span class="badge" style="background:#ecfdf5; color:#10b981; border:1px solid #6ee7b7; margin-right:4px; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem; cursor:pointer;" onclick="revokeSubstitution('${dept}', '${grade}', '${c}')" title="คลิกเพื่อยกเลิกการอนุมัติ">${c} (อนุมัติแล้ว)</span>`;
+                } else {
+                    unapprovedCount++;
+                    return `<span class="badge" style="background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; margin-right:4px; padding:0.2rem 0.4rem; border-radius:4px; font-size:0.8rem; cursor:pointer;" onclick="approveSubstitution('${dept}', '${grade}', '${c}')" title="คลิกเพื่ออนุมัติให้ใช้แทนรายวิชาในหลักสูตร">${c} <i class="fa-solid fa-wrench"></i></span>`;
+                }
+            }).join(' ');
+        }
+        
+        // Recalculate status based on unapproved mismatching codes only
+        if (expected === 0 && actual > 0) {
+             statusHtml = `<span class="badge" style="background:#ef4444; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ไม่มีแผน (${actual} วิชา)</span>`;
+             rowStyle = 'background-color: #fef2f2;';
+        } else if (unapprovedCount > 0) {
+            // Warn if there are unapproved mismatched codes, regardless of total count
+            statusHtml = `<span class="badge" style="background:#ef4444; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">รหัสไม่ตรง ${unapprovedCount} วิชา</span>`;
+            rowStyle = 'background-color: #fef2f2;';
+        } else if (diff > 0) {
+            statusHtml = `<span class="badge" style="background:#ef4444; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">เกินแผนมา ${diff} วิชา</span>`;
+            rowStyle = 'background-color: #fef2f2;';
+        } else if (diff === 0) {
+            statusHtml = `<span class="badge" style="background:#10b981; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ครบถ้วน</span>`;
+        } else {
+            statusHtml = `<span class="badge" style="background:#f59e0b; color:white; padding:0.3rem 0.6rem; border-radius:4px; font-size:0.8rem;">ขาด ${Math.abs(diff)} วิชา</span>`;
         }
 
         const tr = document.createElement('tr');
@@ -2337,3 +2521,31 @@ function renderAuditTable() {
         tbody.appendChild(tr);
     });
 }
+
+
+window.approveSubstitution = function(dept, grade, code) {
+    if (!state.isAdmin) return;
+    if (confirm(`คุณต้องการอนุมัติให้ใช้รหัสวิชา ${code} เป็นวิชาทดแทน/เพิ่มเติม สำหรับ ${dept} ${grade} ใช่หรือไม่?
+
+(การแจ้งเตือนรหัสไม่ตรงจะหายไป)`)) {
+        const key = `${dept}__${grade}__${code}`;
+        if (!state.approvedSubstitutions) state.approvedSubstitutions = {};
+        state.approvedSubstitutions[key] = true;
+        localStorage.setItem('freebook_approved_subs', JSON.stringify(state.approvedSubstitutions));
+        syncToFirebase('approvedSubstitutions', state.approvedSubstitutions);
+        renderAuditTable();
+    }
+};
+
+window.revokeSubstitution = function(dept, grade, code) {
+    if (!state.isAdmin) return;
+    if (confirm(`ยกเลิกการอนุมัติวิชา ${code} สำหรับ ${dept} ${grade} หรือไม่?`)) {
+        const key = `${dept}__${grade}__${code}`;
+        if (state.approvedSubstitutions) {
+            delete state.approvedSubstitutions[key];
+            localStorage.setItem('freebook_approved_subs', JSON.stringify(state.approvedSubstitutions));
+            syncToFirebase('approvedSubstitutions', state.approvedSubstitutions);
+            renderAuditTable();
+        }
+    }
+};

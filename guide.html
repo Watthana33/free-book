@@ -538,6 +538,56 @@ if (existingIndex !== -1) {
             </div>
         </section>
 
+        <!-- STEP 9: GITHUB PUSH -->
+        <section class="doc-card" id="step9">
+            <div class="section-title">
+                <h2><i class="fa-brands fa-github"></i> 9. คู่มือการอัปโหลดและอัปเดตโปรเจกต์ผ่าน GitHub</h2>
+            </div>
+            <p>เพื่อการสำรองข้อมูลโค้ด (Backup) และการเผยแพร่เว็บไซต์ผ่าน <strong>GitHub Pages</strong> เราสามารถใช้คำสั่ง Git ผ่าน Terminal (หรือ Command Prompt) ได้ดังนี้:</p>
+            
+            <h3 style="margin-top: 1.5rem; color: var(--secondary);"><i class="fa-solid fa-cloud-arrow-up"></i> กรณีที่ 1: การอัปโหลดครั้งแรก (First Push)</h3>
+            <p>สำหรับโปรเจกต์ที่เพิ่งสร้างใหม่และยังไม่เคยเชื่อมต่อกับ GitHub ให้รันคำสั่งทีละบรรทัดตามนี้:</p>
+            <div class="code-block" style="background:var(--dark); color:var(--white); padding: 1rem; border-radius:var(--radius); margin-top:0.5rem;">
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 1. เริ่มต้นระบบ Git ให้โฟลเดอร์นี้</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git init</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 2. เพิ่มไฟล์ทั้งหมดเตรียมขึ้นเซิร์ฟเวอร์</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git add .</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 3. เซฟประวัติการแก้ไขครั้งแรก</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git commit -m "First commit: อัปโหลดโปรเจกต์หนังสือเรียนฟรี"</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 4. เปลี่ยนชื่อกิ่งหลักเป็น main</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git branch -M main</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 5. เชื่อมต่อกับ Repository บน GitHub (เปลี่ยนลิงก์เป็นของคุณเอง)</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git remote add origin https://github.com/Watthana33/free-book.git</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 6. อัปโหลดขึ้น GitHub</code>
+                <code style="display:block;">git push -u origin main</code>
+            </div>
+
+            <h3 style="margin-top: 2rem; color: var(--secondary);"><i class="fa-solid fa-code-commit"></i> กรณีที่ 2: การอัปเดตเวอร์ชันใหม่ (Update / Push)</h3>
+            <p>หากคุณเคยเชื่อมต่อ GitHub ไว้แล้ว และมีการเขียนโค้ดเพิ่มเติม (เช่น แก้ไขบั๊ก, เพิ่มฟีเจอร์) ให้ทำตาม 4 ขั้นตอนสั้นๆ นี้ทุกครั้งที่ต้องการอัปเดต:</p>
+            <div class="code-block" style="background:var(--dark); color:var(--white); padding: 1rem; border-radius:var(--radius); margin-top:0.5rem;">
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 1. เช็คว่ามีไฟล์ไหนเปลี่ยนแปลงบ้าง (แสดงเป็นสีแดง)</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git status</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 2. นำไฟล์ที่แก้ไขทั้งหมด (จุดหมายถึงเลือกทั้งหมด) เข้าคิวเตรียมอัปโหลด</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git add .</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 3. เขียนบันทึกกำกับว่ารอบนี้เราแก้ไขอะไรไปบ้าง (ในเครื่องหมายคำพูด)</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git commit -m "อัปเดตระบบตรวจสอบแผนการเรียนและปรับ UI"</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 4. ดันโค้ดทั้งหมดขึ้น GitHub ขุมหลัก (main)</code>
+                <code style="display:block;">git push origin main</code>
+            </div>
+            
+            <div style="background: #fffbeb; padding: 1rem; border-left: 4px solid #f59e0b; margin-top: 1.5rem; border-radius: 4px;">
+                <strong><i class="fa-solid fa-lightbulb" style="color:#f59e0b;"></i> เคล็ดลับเพิ่มเติม:</strong> หากคุณใช้งานร่วมกับผู้อื่น หรือแก้ไขโค้ดจากคอมพิวเตอร์หลายเครื่อง แนะนำให้รัน <code>git pull origin main</code> ก่อนเริ่มทำงานเสมอ เพื่อดึงโค้ดเวอร์ชันล่าสุดจากเซิร์ฟเวอร์มาไว้ที่เครื่องเรา ป้องกันปัญหาโค้ดทับซ้อนกัน (Merge Conflict)
+            </div>
+        </section>
+
         <footer class="doc-footer">
             <p>© พ.ศ. 2569 งานวิทยบริการและเทคโนโลยีการศึกษา วิทยาลัยเทคนิคอุดรธานี</p>
             <p style="font-size:0.8rem; margin-top:0.3rem;">พัฒนาด้วย Vanilla HTML5, CSS3, JavaScript (ES6+), Firebase Realtime DB, Chart.js & SheetJS</p>
