@@ -120,6 +120,9 @@
             <button class="tab-btn" data-tab="tab-reports">
                 <i class="fa-solid fa-file-invoice-dollar"></i> สรุปงบประมาณ & รายงาน สอศ.
             </button>
+            <button class="tab-btn" id="estimateTabBtn" data-tab="tab-estimate">
+                <i class="fa-solid fa-users-gear"></i> ประมาณการ ปวช.1
+            </button>
             <button class="tab-btn admin-only hidden" data-tab="tab-audit">
                 <i class="fa-solid fa-shield-halved"></i> ตรวจสอบแผนการเรียน
             </button>
@@ -521,8 +524,92 @@
                 <div class="report-footer-credit text-center mt-4">
                     <small>พัฒนาโดย: งานวิทยบริการและเทคโนโลยีการศึกษา วิทยาลัยเทคนิคอุดรธานี</small>
                 </div>
-
             </div>
+        </section>
+        <!-- ==================================================== -->
+        <!-- TAB 7: ESTIMATE STUDENTS -->
+        <!-- ==================================================== -->
+        <section id="tab-estimate" class="tab-content">
+            <div class="content-header no-print">
+                <div class="header-titles">
+                    <h2><i class="fa-solid fa-users-gear" style="color: #2563eb;"></i> ประมาณการผู้เรียน (รับใหม่ ปวช.1)</h2>
+                    <p>ระบบคำนวณและเก็บสถิติเพื่อใช้อ้างอิงสัดส่วนยอดจัดสรรหนังสือเทียบกับแผนรับนักศึกษาใหม่ </p>
+                </div>
+                <div class="header-actions flex-gap" style="align-items: center;">
+                    <div class="admin-only hidden no-print" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-muted); padding:0.4rem 0.8rem; border-radius:var(--radius-full); border:1px solid var(--border-color);">
+                        <input type="checkbox" id="estimateToggleSwitch" style="width:1.2rem; height:1.2rem; cursor:pointer;">
+                        <label for="estimateToggleSwitch" style="margin:0; font-weight:600; cursor:pointer;" id="estimateToggleLabel">เปิดใช้งานแท็บนี้</label>
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; font-weight:600; display:block;" class="mb-1">ปีการศึกษา:</label>
+                        <select id="estimateYearSelect" class="form-select select-lg" style="min-width: 120px;"></select>
+                    </div>
+                    <button class="btn btn-primary" onclick="window.print()" style="height: 38px;">
+                        <i class="fa-solid fa-print"></i> พิมพ์หน้าต่างนี้
+                    </button>
+                </div>
+            </div>
+
+            <div class="printable-area-target" id="estimatePrintArea">
+                <div class="table-print-header">
+                    <h2>รายงานประมาณการยอดจัดสรรหนังสือเรียนฟรี ระดับชั้น ปวช.1</h2>
+                    <p id="estimatePrintMeta">ประจำปีการศึกษา</p>
+                </div>
+                
+                <div class="admin-only hidden no-print" style="margin-bottom: 1rem; text-align: right;">
+                    <button class="btn btn-sm btn-outline" id="addEstimateRowBtn" style="border-style: dashed;">
+                        <i class="fa-solid fa-plus"></i> เพิ่มข้อมูลแผนกวิชา
+                    </button>
+                    <button class="btn btn-sm btn-outline" id="autoFillEstimateBtn" style="margin-left: 0.5rem;" title="ดึงรายชื่อแผนกทั้งหมดที่มีในระบบมาสร้างตารางให้ทันที">
+                        <i class="fa-solid fa-gears"></i> ดึงแผนกอัตโนมัติ
+                    </button>
+                </div>
+
+                <!-- Chart Container -->
+                <div class="chart-card full-width mb-4 no-print" style="display:none;" id="estimateChartWrapper">
+                    <div class="chart-header">
+                        <h3><i class="fa-solid fa-chart-bar"></i> เปรียบเทียบข้อมูลประมาณการผู้เรียน ปวช.1 (คลิกที่ชื่อบนแถบสีเพื่อเปิด/ปิดกราฟ)</h3>
+                    </div>
+                    <div class="chart-body" style="height: 400px;">
+                        <canvas id="estimateChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Disabled Message -->
+                <div id="estimateDisabledMessage" style="text-align:center; padding: 4rem 1rem; display:none;" class="no-print">
+                    <i class="fa-solid fa-users-slash mb-3" style="font-size:3rem; color:var(--text-muted); opacity:0.5;"></i>
+                    <h3 style="color:var(--text-muted);">แท็บประมาณการถูกปิดใช้งาน</h3>
+                    <p style="color:var(--text-muted); margin-bottom: 2rem;">ปิดการแสดงผลไว้เพื่อป้องกันความสับสน (แนะนำสำหรับเทอม 2)</p>
+                    <button class="btn btn-primary admin-only hidden" id="bigEnableEstimateBtn">
+                        <i class="fa-solid fa-power-off"></i> เปิดใช้งานแท็บประมาณการ
+                    </button>
+                </div>
+                
+                <div class="table-container" id="estimateTableContainer">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width:5%;" class="text-center">ลำดับ</th>
+                                <th style="width:20%;">แผนกวิชา</th>
+                                <th style="width:12%;" class="text-center">สถิติรับจริง<br><small>(ปีที่แล้ว)</small></th>
+                                <th style="width:12%;" class="text-center">แผนรับ<br><small>(ปีปัจจุบัน)</small></th>
+                                <th style="width:12%; background:#f0fdf4; color:#166534;" class="text-center">ยอดแนะนำ<br><small>(เฉลี่ย)</small></th>
+                                <th style="width:14%; background:#eff6ff; color:#1e3a8a;" class="text-center">ยอดจัดสรร<br><small>(สั่งหนังสือ)</small></th>
+                                <th style="width:12%;" class="text-center">สัดส่วน<br><small>(%)</small></th>
+                                <th style="width:12%;" class="text-center no-print admin-only hidden">จัดการ (เลื่อน)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="estimateTableBody">
+                            <!-- JS rendered -->
+                        </tbody>
+                        <tfoot id="estimateTableFoot" style="font-weight: bold; background: var(--bg-muted);">
+                            <!-- Totals -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </section>
+
         <!-- ==================================================== -->
         <!-- TAB 6: AUDIT CURRICULUM (ADMIN ONLY) -->
         <!-- ==================================================== -->
@@ -540,7 +627,7 @@
                     <button class="btn btn-primary" id="importCurriculumBtn" style="display:none;">
                         <i class="fa-solid fa-file-excel"></i> อัปโหลดแผนการเรียน (.xlsx)
                     </button>
-                    <input type="file" id="curriculumFileInput" accept=".xlsx, .xls, .csv" class="hidden">
+                    
                 </div>
             </div>
 
@@ -557,7 +644,17 @@
                     </div>
                 </div>
 
-                <div class="table-container">
+                <!-- Disabled Message -->
+                <div id="estimateDisabledMessage" style="text-align:center; padding: 4rem 1rem; display:none;" class="no-print">
+                    <i class="fa-solid fa-users-slash mb-3" style="font-size:3rem; color:var(--text-muted); opacity:0.5;"></i>
+                    <h3 style="color:var(--text-muted);">แท็บประมาณการถูกปิดใช้งาน</h3>
+                    <p style="color:var(--text-muted); margin-bottom: 2rem;">ปิดการแสดงผลไว้เพื่อป้องกันความสับสน (แนะนำสำหรับเทอม 2)</p>
+                    <button class="btn btn-primary admin-only hidden" id="bigEnableEstimateBtn">
+                        <i class="fa-solid fa-power-off"></i> เปิดใช้งานแท็บประมาณการ
+                    </button>
+                </div>
+                
+                <div class="table-container" id="estimateTableContainer">
                     <table class="data-table" id="auditTable">
                         <thead>
                             <tr>
@@ -859,6 +956,11 @@
 
                 <h4 class="mb-2">กำหนดจำนวนรายวิชาตามหลักสูตร (ระบบตรวจจับสาขาอัตโนมัติ):</h4>
                 <p class="text-muted mb-2" style="font-size:0.85rem;">ป้อนเป้าหมายจำนวนวิชาของแต่ละสาขาวิชาที่คีย์ในระบบ เพื่อใช้รีเช็ควิชาเกิน/ขาด:</p>
+                <div style="text-align: right; margin-bottom: 0.5rem;">
+                    <button type="button" id="addNewTargetPairBtn" class="btn btn-sm btn-outline" style="border-style: dashed; border-color: var(--primary);">
+                        <i class="fa-solid fa-plus" style="color: var(--primary);"></i> เพิ่มแผนก/ระดับชั้นใหม่
+                    </button>
+                </div>
                 <div id="targetConfigList" class="target-config-list">
                     <!-- Dynamic Inputs for Dept + Grade -->
                 </div>

@@ -268,6 +268,7 @@ let state = {
     adminPassHash: DEFAULT_PASS_HASH,
     targetSubjects: { ...DEFAULT_TARGET_SUBJECTS },
     showSubjectCheckDashboard: true,
+    showEstimateTab: true,
     parsedExcelOrders: [],
     charts: {},
     curriculumPlans: [],
@@ -314,6 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initImportExcelEvents();
     initFirebaseConfigEvents();
     initAuditEvents();
+    initEstimateEvents();
     
     renderAllViews();
     } catch (error) {
@@ -348,9 +350,28 @@ function loadStateFromStorage() {
     const savedAdmin = localStorage.getItem('freebook_is_admin');
     state.isAdmin = savedAdmin === 'true';
 
+    const savedColors = localStorage.getItem('freebook_chart_colors');
+    if (savedColors) {
+        try { state.chartColors = JSON.parse(savedColors); } catch(e) {}
+    }
+    if (!state.chartColors) {
+        state.chartColors = {
+            hist1: '#94a3b8',
+            plan: '#64748b',
+            rec: '#4ade80',
+            alloc: '#3b82f6'
+        };
+    }
+
     const savedPassHash = localStorage.getItem('freebook_admin_pass_hash');
     if (savedPassHash) state.adminPassHash = savedPassHash;
 
+    const savedEstimates = localStorage.getItem('freebook_student_estimates');
+    if (savedEstimates) {
+        try { state.studentEstimates = JSON.parse(savedEstimates); } catch(e){}
+    }
+    if (!state.studentEstimates) state.studentEstimates = {};
+    
     const savedTargets = localStorage.getItem('freebook_target_subjects');
     if (savedTargets) {
         try { state.targetSubjects = JSON.parse(savedTargets); } catch(e){}
@@ -366,6 +387,9 @@ function loadStateFromStorage() {
 
     const savedShowCheck = localStorage.getItem('freebook_show_check_dashboard');
     if (savedShowCheck !== null) state.showSubjectCheckDashboard = savedShowCheck === 'true';
+    
+    const savedEstimateTab = localStorage.getItem('freebook_show_estimate_tab');
+    if (savedEstimateTab !== null) state.showEstimateTab = savedEstimateTab === 'true';
 
     const savedAuditEnabled = localStorage.getItem('freebook_audit_enabled');
     if (savedAuditEnabled !== null) state.isAuditEnabled = savedAuditEnabled === 'true';
@@ -413,6 +437,7 @@ function saveCustomYearsToStorage() {
 function saveTargetsToStorage() {
     localStorage.setItem('freebook_target_subjects', JSON.stringify(state.targetSubjects));
     syncToFirebase('targetSubjects', state.targetSubjects);
+                syncToFirebase('studentEstimates', state.studentEstimates || {});
 }
 
 function saveShowCheckToStorage() {
@@ -495,6 +520,10 @@ async function initFirebaseConnection() {
                     state.showSubjectCheckDashboard = data.showSubjectCheckDashboard;
                     localStorage.setItem('freebook_show_check_dashboard', state.showSubjectCheckDashboard);
                 }
+                if (data.showEstimateTab !== undefined) {
+                    state.showEstimateTab = data.showEstimateTab;
+                    localStorage.setItem('freebook_show_estimate_tab', state.showEstimateTab);
+                }
                 if (data.curriculumPlans !== undefined) {
                     let plans = data.curriculumPlans || [];
                     if (typeof plans === 'object' && !Array.isArray(plans)) {
@@ -526,7 +555,9 @@ async function initFirebaseConnection() {
                 syncToFirebase('orders', state.orders);
                 syncToFirebase('customYears', state.customYears);
                 syncToFirebase('targetSubjects', state.targetSubjects);
+                syncToFirebase('studentEstimates', state.studentEstimates || {});
                 syncToFirebase('showSubjectCheckDashboard', state.showSubjectCheckDashboard);
+                syncToFirebase('showEstimateTab', state.showEstimateTab);
                 syncToFirebase('curriculumPlans', state.curriculumPlans);
                 syncToFirebase('isAuditEnabled', state.isAuditEnabled);
                 updateFirebaseStatusUI(true, 'เชื่อมต่อ Firebase และอัปโหลดข้อมูลเริ่มต้นแล้ว');
@@ -1172,6 +1203,7 @@ function populateFilterDropdowns() {
 }
 
 function renderAllViews() {
+    renderEstimateTab();
     renderYearDropdownOptions();
     updateActiveTermHeader();
     populateFilterDropdowns();
@@ -1189,16 +1221,41 @@ function renderAllViews() {
 // 9. SUBJECT COUNT RE-CHECK WIDGET
 // =========================================================
 function getDetectedDeptGradePairs() {
+    const pairsMap = new Map();
+    
+    // 1. From active orders and KNOWN_DEPARTMENTS
     const allDepts = Array.from(new Set([...KNOWN_DEPARTMENTS, ...state.orders.map(o => normalizeText(o.dept))])).filter(Boolean);
     const grades = ['ปวช.1', 'ปวช.2', 'ปวช.3'];
-
-    const pairs = [];
+    
     allDepts.forEach(d => {
         grades.forEach(g => {
-            pairs.push({ dept: d, grade: g, key: `${d}_${g}` });
+            // Support backward compatible single underscore key
+            const oldKey = `${d}_${g}`;
+            const newKey = `${d}__${g}`;
+            
+            // If they have old format in state, use it so it maps correctly, else use new
+            const keyToUse = (state.targetSubjects && state.targetSubjects[oldKey] !== undefined) ? oldKey : newKey;
+            
+            pairsMap.set(keyToUse, { dept: d, grade: g, key: keyToUse });
         });
     });
-    return pairs;
+    
+    // 2. From manually added configs (which might use double underscores and arbitrary grades like ปวช.4)
+    if (state.targetSubjects) {
+        Object.keys(state.targetSubjects).forEach(key => {
+            let parts = key.split('__');
+            if (parts.length === 1) parts = key.split('_'); // fallback for old keys
+            
+            if (parts.length >= 2) {
+                // If it's not already in pairsMap, add it!
+                if (!pairsMap.has(key)) {
+                    pairsMap.set(key, { dept: parts[0], grade: parts[1], key: key });
+                }
+            }
+        });
+    }
+
+    return Array.from(pairsMap.values());
 }
 
 function renderSubjectCheckWidget() {
@@ -1275,17 +1332,29 @@ function renderSubjectCheckWidget() {
 
         deptGroups[dept].forEach(p => {
             const planForGroup = currentYearPlans.filter(plan => normalizeText(plan.dept) === normalizeText(p.dept) && normalizeText(plan.grade) === normalizeText(p.grade));
+            
+            let manualCount = 0;
+            let manualCurr = '';
+            const targetObj = state.targetSubjects[p.key];
+            if (targetObj !== undefined) {
+                if (typeof targetObj === 'object') {
+                    manualCount = targetObj.count || 0;
+                    manualCurr = targetObj.curr || '';
+                } else {
+                    manualCount = Number(targetObj) || 0;
+                }
+            }
+
             let targetCount = 0;
             if (planForGroup.length > 0) {
                 targetCount = planForGroup.length;
             } else {
-                targetCount = state.targetSubjects[p.key] !== undefined ? state.targetSubjects[p.key] : 0;
+                targetCount = manualCount;
             }
             
             const deptGradeOrders = activeOrders.filter(o => getNormalizedKey(o.dept) === getNormalizedKey(p.dept) && getNormalizedKey(o.grade) === getNormalizedKey(p.grade));
             const uniqueSubjectKeys = new Set(deptGradeOrders.map(o => getUniqueSubjectKey(o)));
             const actualCount = uniqueSubjectKeys.size;
-
             if (targetCount === 0 && actualCount === 0) return;
             hasData = true;
 
@@ -1310,7 +1379,7 @@ function renderSubjectCheckWidget() {
             item.style.borderRadius = 'var(--radius-sm)';
             item.innerHTML = `
                 <div style="margin-bottom:0.5rem;">
-                    <div class="check-title" style="font-size:1.05rem;"><i class="fa-solid fa-graduation-cap"></i> ${p.grade}</div>
+                    <div class="check-title" style="font-size:1.05rem;"><i class="fa-solid fa-graduation-cap"></i> ${p.grade}${manualCurr ? ` <span style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;">(หลักสูตร ${manualCurr})</span>` : ''}</div>
                     <div class="check-subtitle" style="font-size:0.8rem; margin-top:0.25rem;">เป้าหมาย: ${targetCount} วิชา | สั่งจริง: ${actualCount} วิชา</div>
                 </div>
                 <div class="check-status-badge">${statusBadgeText}</div>
@@ -1355,7 +1424,8 @@ function initTargetConfigEvents() {
     const saveTargetConfigBtn = document.getElementById('saveTargetConfigBtn');
 
     const openConfigModal = () => {
-        document.getElementById('showSubjectCheckDashboardToggle').checked = state.showSubjectCheckDashboard;
+        if (document.getElementById('showSubjectCheckDashboardToggle')) document.getElementById('showSubjectCheckDashboardToggle').checked = state.showSubjectCheckDashboard;
+        if (document.getElementById('showEstimateTabToggle')) document.getElementById('showEstimateTabToggle').checked = state.showEstimateTab;
         
         const list = document.getElementById('targetConfigList');
         list.innerHTML = '';
@@ -1363,19 +1433,85 @@ function initTargetConfigEvents() {
         const pairs = getDetectedDeptGradePairs();
 
         pairs.forEach(p => {
-            const val = state.targetSubjects[p.key] !== undefined ? state.targetSubjects[p.key] : 0;
+            let valCount = 0;
+            let valCurr = '';
+            const targetObj = state.targetSubjects[p.key];
+            if (targetObj !== undefined) {
+                if (typeof targetObj === 'object') {
+                    valCount = targetObj.count || 0;
+                    valCurr = targetObj.curr || '';
+                } else {
+                    valCount = Number(targetObj) || 0;
+                }
+            }
 
             const div = document.createElement('div');
             div.className = 'target-config-item';
+            div.style.position = 'relative';
+            div.style.marginBottom = '1rem';
+            div.style.padding = '0.5rem';
+            div.style.border = '1px solid var(--border-color)';
+            div.style.borderRadius = 'var(--radius-sm)';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.gap = '0.5rem';
+            div.style.flexWrap = 'wrap';
+            
             div.innerHTML = `
-                <label class="form-label" style="font-weight:600; font-size:0.85rem;">${p.dept} (${p.grade}):</label>
-                <input type="number" min="0" value="${val}" data-key="${p.key}" class="form-input target-input-field" style="width:100%; margin-top:0.3rem;">
+                <div style="flex:1; min-width: 150px;">
+                    <label class="form-label" style="font-weight:600; font-size:0.85rem; margin:0;">${escapeHtml(p.dept)} (${escapeHtml(p.grade)}):</label>
+                    <div style="display: flex; gap: 0.5rem; margin-top: 0.3rem;">
+                        <input type="number" min="0" value="${valCount}" data-key="${p.key}" class="form-input target-input-field" placeholder="จำนวนวิชา" style="width: 50%;">
+                        <input type="text" value="${escapeHtml(valCurr)}" data-key-curr="${p.key}" class="form-input target-curr-field" placeholder="ปีหลักสูตร (เช่น 67)" style="width: 50%;">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger" title="ลบรายการนี้" onclick="deleteTargetPair('${p.key}')" style="height: 38px; align-self: flex-end;">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
             `;
             list.appendChild(div);
         });
 
         targetConfigModal.classList.remove('hidden');
     };
+
+    window.deleteTargetPair = function(key) {
+        if(confirm('ต้องการลบแผนก/ระดับชั้นนี้ออกจากการตั้งค่าใช่หรือไม่?')) {
+            if (state.targetSubjects && state.targetSubjects[key] !== undefined) {
+                delete state.targetSubjects[key];
+                localStorage.setItem('freebook_target_subjects', JSON.stringify(state.targetSubjects));
+                syncToFirebase('targetSubjects', state.targetSubjects);
+                syncToFirebase('studentEstimates', state.studentEstimates || {});
+            }
+            // re-render the modal instantly
+            openConfigModal();
+            renderSubjectCheckWidget();
+        }
+    };
+
+    const addNewTargetPairBtn = document.getElementById('addNewTargetPairBtn');
+    if (addNewTargetPairBtn) {
+        addNewTargetPairBtn.addEventListener('click', () => {
+            const dept = prompt('กรอกชื่อ "แผนกวิชา" ที่ต้องการเพิ่ม: (เช่น ช่างยนต์)');
+            if (!dept || dept.trim() === '') return;
+            const grade = prompt('กรอกชื่อ "ระดับชั้น": (เช่น ปวช.1)');
+            if (!grade || grade.trim() === '') return;
+            
+            const key = `${normalizeText(dept)}__${normalizeText(grade)}`;
+            if (!state.targetSubjects) state.targetSubjects = {};
+            
+            if (state.targetSubjects[key] !== undefined) {
+                alert('แผนกและระดับชั้นนี้มีอยู่แล้วในระบบ');
+                return;
+            }
+            
+            state.targetSubjects[key] = { count: 0, curr: '' };
+            localStorage.setItem('freebook_target_subjects', JSON.stringify(state.targetSubjects));
+            syncToFirebase('targetSubjects', state.targetSubjects);
+            openConfigModal();
+            renderSubjectCheckWidget();
+        });
+    }
 
     openTargetConfigBtn.addEventListener('click', openConfigModal);
     dashboardWidgetToggleBtn.addEventListener('click', openConfigModal);
@@ -1397,7 +1533,13 @@ function initTargetConfigEvents() {
 
         document.querySelectorAll('.target-input-field').forEach(input => {
             const key = input.getAttribute('data-key');
-            state.targetSubjects[key] = Number(input.value) || 0;
+            const currInput = document.querySelector(`.target-curr-field[data-key-curr="${key}"]`);
+            const currVal = currInput ? currInput.value.trim() : '';
+            
+            state.targetSubjects[key] = {
+                count: Number(input.value) || 0,
+                curr: currVal
+            };
         });
 
         saveTargetsToStorage();
@@ -2549,3 +2691,387 @@ window.revokeSubstitution = function(dept, grade, code) {
         }
     }
 };
+
+
+// =========================================================
+// 9. STUDENT ESTIMATION MODULE
+// =========================================================
+
+function saveEstimatesToStorage() {
+    localStorage.setItem('freebook_student_estimates', JSON.stringify(state.studentEstimates));
+    syncToFirebase('studentEstimates', state.studentEstimates);
+}
+
+function updateEstimateToggleUI() {
+    const toggleSwitch = document.getElementById('estimateToggleSwitch');
+    const toggleLabel = document.getElementById('estimateToggleLabel');
+    const disabledMsg = document.getElementById('estimateDisabledMessage');
+    const tableContainer = document.getElementById('estimateTableContainer');
+    const chartWrapper = document.getElementById('estimateChartWrapper');
+    
+    if (toggleSwitch) toggleSwitch.checked = state.showEstimateTab;
+    if (toggleLabel) {
+        toggleLabel.textContent = state.showEstimateTab ? 'เปิดใช้งานอยู่ (ทุกคนมองเห็น)' : 'กำลังปิดซ่อน (เทอม 2)';
+        toggleLabel.style.color = state.showEstimateTab ? 'var(--primary-color)' : 'var(--text-muted)';
+    }
+    
+    if (!state.showEstimateTab) {
+        if (disabledMsg) disabledMsg.style.display = 'block';
+        if (tableContainer) tableContainer.style.display = 'none';
+        if (chartWrapper) chartWrapper.style.display = 'none';
+    } else {
+        if (disabledMsg) disabledMsg.style.display = 'none';
+        if (tableContainer) tableContainer.style.display = 'block';
+        // chartWrapper visibility is handled by renderEstimateTab based on data
+    }
+    updateAdminUI();
+}
+
+function initEstimateEvents() {
+    const toggleSwitch = document.getElementById('estimateToggleSwitch');
+    const bigEnableBtn = document.getElementById('bigEnableEstimateBtn');
+    
+    if (toggleSwitch) {
+        toggleSwitch.addEventListener('change', (e) => {
+            state.showEstimateTab = e.target.checked;
+            localStorage.setItem('freebook_show_estimate_tab', state.showEstimateTab);
+            syncToFirebase('showEstimateTab', state.showEstimateTab);
+            updateEstimateToggleUI();
+            if (state.showEstimateTab) renderEstimateTab();
+        });
+    }
+    
+    if (bigEnableBtn) {
+        bigEnableBtn.addEventListener('click', () => {
+            if (toggleSwitch) {
+                toggleSwitch.checked = true;
+                toggleSwitch.dispatchEvent(new Event('change'));
+            }
+        });
+    }
+    
+    const yearSelect = document.getElementById('estimateYearSelect');
+    if (yearSelect) {
+        yearSelect.addEventListener('change', (e) => {
+            renderEstimateTab(e.target.value);
+        });
+    }
+
+    const addBtn = document.getElementById('addEstimateRowBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            if (!state.isAdmin) return;
+            const year = document.getElementById('estimateYearSelect').value;
+            if (!year) {
+                alert('กรุณาเลือกปีการศึกษาก่อน');
+                return;
+            }
+            const dept = prompt('กรอกชื่อ "แผนกวิชา" ที่ต้องการเพิ่ม:');
+            if (!dept || dept.trim() === '') return;
+            
+            const deptNorm = normalizeText(dept);
+            if (!state.studentEstimates[year]) state.studentEstimates[year] = {};
+            if (state.studentEstimates[year][deptNorm]) {
+                alert('แผนกนี้มีอยู่แล้วในปีการศึกษานี้');
+                return;
+            }
+            
+            state.studentEstimates[year][deptNorm] = { 
+                hist2: 0, hist1: 0, plan: 0, alloc: 0, note: '' 
+            };
+            saveEstimatesToStorage();
+            renderEstimateTab(year);
+        });
+    }
+
+    const autoFillBtn = document.getElementById('autoFillEstimateBtn');
+    if (autoFillBtn) {
+        autoFillBtn.addEventListener('click', () => {
+            if (!state.isAdmin) return;
+            if (!confirm('ระบบจะดึงรายชื่อแผนกทั้งหมดมาสร้างในตารางให้ทันที ยืนยันหรือไม่?')) return;
+            
+            const year = document.getElementById('estimateYearSelect').value;
+            if (!year) return;
+            if (!state.studentEstimates[year]) state.studentEstimates[year] = {};
+            
+            // Get unique depts from orders
+            const depts = new Set(state.orders.map(o => normalizeText(o.dept)).filter(Boolean));
+            depts.forEach(d => {
+                if (!state.studentEstimates[year][d]) {
+                    state.studentEstimates[year][d] = { hist2: 0, hist1: 0, plan: 0, alloc: 0, note: '' };
+                }
+            });
+            saveEstimatesToStorage();
+            renderEstimateTab(year);
+            showToast('ดึงข้อมูลแผนกวิชาเรียบร้อย', 'success');
+        });
+    }
+}
+
+window.editEstimateCell = function(year, dept, field) {
+    if (!state.isAdmin) return;
+    
+    if (!state.studentEstimates[year] || !state.studentEstimates[year][dept]) return;
+    const currentVal = state.studentEstimates[year][dept][field];
+    
+    let promptMsg = '';
+    let isNumber = true;
+    
+    switch(field) {
+        case 'hist1': promptMsg = 'กรอกสถิติรับจริง (ปีที่แล้ว):'; break;
+        case 'plan': promptMsg = 'กรอกแผนรับสมัครปีปัจจุบัน:'; break;
+        case 'alloc': promptMsg = 'กรอกยอดจัดสรรสั่งซื้อหนังสือ:'; break;
+    }
+    
+    const newVal = prompt(promptMsg, currentVal);
+    if (newVal === null) return;
+    
+    state.studentEstimates[year][dept][field] = isNumber ? (Number(newVal) || 0) : newVal.trim();
+    saveEstimatesToStorage();
+    renderEstimateTab(year);
+};
+
+window.deleteEstimateRow = function(year, dept) {
+    if (!state.isAdmin) return;
+    if (confirm(`ต้องการลบข้อมูลประมาณการของแผนก ${dept} ใช่หรือไม่?`)) {
+        if (state.studentEstimates[year] && state.studentEstimates[year][dept]) {
+            delete state.studentEstimates[year][dept];
+            saveEstimatesToStorage();
+            renderEstimateTab(year);
+        }
+    }
+};
+
+function renderEstimateTab(forceYear = null) {
+    updateEstimateToggleUI();
+    if (!state.showEstimateTab) return; // Skip rendering table/chart if disabled
+    
+    const yearSelect = document.getElementById('estimateYearSelect');
+    if (!yearSelect) return;
+    
+    // Populate year dropdown
+    const years = Array.from(new Set([...state.customYears, state.selectedYear].map(y => Number(y)))).filter(y => !isNaN(y)).sort((a,b)=>b-a);
+    yearSelect.innerHTML = years.map(y => `<option value="${y}">ปีการศึกษา ${y}</option>`).join('');
+    
+    const targetYear = forceYear || state.selectedYear;
+    yearSelect.value = targetYear;
+    
+    document.getElementById('estimatePrintMeta').innerText = `ประจำปีการศึกษา ${targetYear}`;
+    
+    const tbody = document.getElementById('estimateTableBody');
+    const tfoot = document.getElementById('estimateTableFoot');
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+    
+    const yearData = state.studentEstimates[targetYear] || {};
+    let depts = Object.keys(yearData).filter(k => k !== '_order');
+    if (yearData._order) {
+        const savedOrder = yearData._order.split(',');
+        const missing = depts.filter(d => !savedOrder.includes(d)).sort();
+        depts = savedOrder.filter(d => depts.includes(d)).concat(missing);
+    } else {
+        depts = depts.sort();
+    }
+    yearData._order = depts.join(',');
+
+    
+    if (depts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted" style="padding: 2rem;">ยังไม่มีข้อมูลประมาณการสำหรับปีการศึกษานี้</td></tr>`;
+        return;
+    }
+    
+    let sumH1 = 0, sumPlan = 0, sumRec = 0, sumAlloc = 0;
+    
+    depts.forEach((dept, idx) => {
+        const d = yearData[dept];
+        sumH1 += d.hist1 || 0;
+        sumPlan += d.plan || 0;
+        sumAlloc += d.alloc || 0;
+        
+        // Calculate recommended: Average of hist1 and plan
+        let rec = 0;
+        if (d.hist1 > 0 && d.plan > 0) {
+            rec = Math.ceil((d.hist1 + d.plan) / 2); // Round up just in case of decimals
+        } else if (d.hist1 > 0) {
+            rec = d.hist1;
+        } else if (d.plan > 0) {
+            rec = d.plan;
+        }
+        sumRec += rec;
+        
+        let pct = 0;
+        if (d.plan > 0) {
+            pct = ((d.alloc / d.plan) * 100).toFixed(1);
+        }
+        
+        let pctColor = '#334155';
+        if (pct > 100) pctColor = '#ef4444'; // over
+        else if (pct >= 90) pctColor = '#10b981'; // ok
+        else if (pct > 0) pctColor = '#f59e0b'; // under
+        
+        const tr = document.createElement('tr');
+        
+        const cellClass = state.isAdmin ? 'cursor:pointer;' : '';
+        const adminClass = state.isAdmin ? '' : 'admin-only hidden no-print';
+        
+        tr.innerHTML = `
+            <td class="text-center">${idx + 1}</td>
+            <td><strong>${escapeHtml(dept)}</strong></td>
+            <td class="text-center" style="${cellClass}" onclick="editEstimateCell('${targetYear}', '${dept}', 'hist1')">${d.hist1 || '-'}</td>
+            <td class="text-center" style="${cellClass} font-weight:bold; color:var(--secondary);" onclick="editEstimateCell('${targetYear}', '${dept}', 'plan')">${d.plan || '-'}</td>
+            <td class="text-center" style="font-weight:bold; color:#166534; background:#f0fdf4;" title="คำนวณจากค่าเฉลี่ยของแผนรับและสถิติรับจริง">${rec > 0 ? rec : '-'}</td>
+            <td class="text-center" style="${cellClass} font-weight:bold; color:#1e3a8a; background:#eff6ff;" onclick="editEstimateCell('${targetYear}', '${dept}', 'alloc')">${d.alloc || '-'}</td>
+            <td class="text-center" style="font-weight:bold; color:${pctColor};">${pct > 0 ? pct + '%' : '-'}</td>
+            <td class="text-center ${adminClass}">
+                <div class="flex-gap" style="justify-content:center;">
+                    <button class="btn btn-sm btn-outline" style="padding:0.2rem 0.4rem;" onclick="moveEstimateRow('${targetYear}', '${dept}', -1)" ${idx === 0 ? 'disabled' : ''} title="เลื่อนขึ้น"><i class="fa-solid fa-arrow-up"></i></button>
+                    <button class="btn btn-sm btn-outline" style="padding:0.2rem 0.4rem;" onclick="moveEstimateRow('${targetYear}', '${dept}', 1)" ${idx === depts.length - 1 ? 'disabled' : ''} title="เลื่อนลง"><i class="fa-solid fa-arrow-down"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" style="padding:0.2rem 0.4rem;" onclick="deleteEstimateRow('${targetYear}', '${dept}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    let totalPct = 0;
+    if (sumPlan > 0) totalPct = ((sumAlloc / sumPlan) * 100).toFixed(1);
+    
+    tfoot.innerHTML = `
+        <tr>
+            <td colspan="2" class="text-right"><strong>รวมทั้งสิ้น:</strong></td>
+            <td class="text-center"><strong>${sumH1 > 0 ? sumH1 : '-'}</strong></td>
+            <td class="text-center" style="color:var(--secondary);"><strong>${sumPlan > 0 ? sumPlan : '-'}</strong></td>
+            <td class="text-center" style="color:#166534; background:#dcfce7;"><strong>${sumRec > 0 ? sumRec : '-'}</strong></td>
+            <td class="text-center" style="color:#1e3a8a; background:#e0e7ff;"><strong>${sumAlloc > 0 ? sumAlloc : '-'}</strong></td>
+            <td class="text-center" style="color:${totalPct > 100 ? '#ef4444' : '#10b981'};"><strong>${totalPct > 0 ? totalPct + '%' : '-'}</strong></td>
+            <td class="no-print admin-only hidden"></td>
+        </tr>
+    `;
+    
+    // Need to re-trigger UI update for the newly added admin classes if admin is logged in
+    if (state.isAdmin) {
+        document.querySelectorAll('#tab-estimate .admin-only').forEach(el => el.classList.remove('hidden'));
+    }
+    
+    // Render Chart
+    if (window.estimateChartInstance) {
+        window.estimateChartInstance.destroy();
+    }
+    const chartCtx = document.getElementById('estimateChart');
+    const chartWrapper = document.getElementById('estimateChartWrapper');
+    if (chartCtx && chartWrapper) {
+        if (depts.length > 0) {
+            chartWrapper.style.display = 'block';
+            window.estimateChartInstance = new Chart(chartCtx, {
+                type: 'bar',
+                data: {
+                    labels: depts,
+                    datasets: [
+                        {
+                            label: 'สถิติรับจริง (ปีที่แล้ว)',
+                            data: depts.map(d => yearData[d].hist1 || 0),
+                            backgroundColor: '#94a3b8'
+                        },
+                        {
+                            label: 'แผนรับ (ปีปัจจุบัน)',
+                            data: depts.map(d => yearData[d].plan || 0),
+                            backgroundColor: '#64748b'
+                        },
+                        {
+                            label: 'ยอดแนะนำ',
+                            data: depts.map(d => {
+                                let rec = 0;
+                                if (yearData[d].hist1 > 0 && yearData[d].plan > 0) rec = Math.ceil((yearData[d].hist1 + yearData[d].plan) / 2);
+                                else if (yearData[d].hist1 > 0) rec = yearData[d].hist1;
+                                else if (yearData[d].plan > 0) rec = yearData[d].plan;
+                                return rec;
+                            }),
+                            backgroundColor: '#4ade80'
+                        },
+                        {
+                            label: 'ยอดจัดสรร',
+                            data: depts.map(d => yearData[d].alloc || 0),
+                            backgroundColor: '#3b82f6'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'top',
+                            labels: {
+                                font: { size: 14, family: "'Sarabun', sans-serif" },
+                                padding: 20
+                            }
+                        },
+                        title: { display: false }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            ticks: { font: { size: 14, family: "'Sarabun', sans-serif" } }
+                        },
+                        x: {
+                            ticks: { font: { size: 14, family: "'Sarabun', sans-serif" } }
+                        }
+                    }
+                }
+            });
+        } else {
+            chartWrapper.style.display = 'none';
+        }
+    }
+}
+
+window.updateChartColor = function(key, color) {
+    if (!state.chartColors) state.chartColors = {};
+    state.chartColors[key] = color;
+    localStorage.setItem('freebook_chart_colors', JSON.stringify(state.chartColors));
+    renderEstimateTab();
+};
+
+window.moveEstimateRow = function(year, dept, dir) {
+    console.log("moveEstimateRow called:", year, dept, dir);
+    if (!state.isAdmin) {
+        alert("คุณไม่มีสิทธิ์ใช้งานส่วนนี้");
+        return;
+    }
+    const yearData = state.studentEstimates[year];
+    if (!yearData) {
+        alert("ไม่พบข้อมูลปีการศึกษา");
+        return;
+    }
+    
+    // Ensure _order exists in case it was missed
+    if (!yearData._order) {
+        let depts = Object.keys(yearData).filter(k => k !== '_order');
+        yearData._order = depts.sort().join(',');
+    }
+    
+    const order = yearData._order.split(',');
+    const idx = order.indexOf(dept);
+    if (idx === -1) {
+        alert("ไม่พบข้อมูลแผนกในระบบจัดเรียง: " + dept);
+        return;
+    }
+    
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    
+    // Swap
+    const temp = order[newIdx];
+    order[newIdx] = order[idx];
+    order[idx] = temp;
+    
+    yearData._order = order.join(',');
+    
+    // Update memory and force sync
+    state.studentEstimates[year] = yearData;
+    saveEstimatesToStorage();
+    
+    // Re-render
+    renderEstimateTab();
+};
+
