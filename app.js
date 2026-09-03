@@ -375,6 +375,12 @@ function loadStateFromStorage() {
     }
     if (!state.studentEstimates) state.studentEstimates = {};
     
+    const savedPopulations = localStorage.getItem('freebook_student_populations');
+    if (savedPopulations) {
+        try { state.studentPopulations = JSON.parse(savedPopulations); } catch(e){}
+    }
+    if (!state.studentPopulations) state.studentPopulations = {};
+
     const savedTargets = localStorage.getItem('freebook_target_subjects');
     if (savedTargets) {
         try { state.targetSubjects = JSON.parse(savedTargets); } catch(e){}
@@ -393,6 +399,9 @@ function loadStateFromStorage() {
     
     const savedEstimateTab = localStorage.getItem('freebook_show_estimate_tab');
     if (savedEstimateTab !== null) state.showEstimateTab = savedEstimateTab === 'true';
+
+    const savedPopTab = localStorage.getItem('freebook_show_student_population');
+    if (savedPopTab !== null) state.showStudentPopulation = savedPopTab === 'true';
 
     const savedAuditEnabled = localStorage.getItem('freebook_audit_enabled');
     if (savedAuditEnabled !== null) state.isAuditEnabled = savedAuditEnabled === 'true';
@@ -561,6 +570,14 @@ async function initFirebaseConnection() {
                 if (data.showEstimateTab !== undefined) {
                     state.showEstimateTab = data.showEstimateTab;
                     localStorage.setItem('freebook_show_estimate_tab', state.showEstimateTab);
+                }
+                if (data.showStudentPopulation !== undefined) {
+                    state.showStudentPopulation = data.showStudentPopulation;
+                    localStorage.setItem('freebook_show_student_population', state.showStudentPopulation);
+                }
+                if (data.studentPopulations) {
+                    state.studentPopulations = data.studentPopulations;
+                    localStorage.setItem('freebook_student_populations', JSON.stringify(state.studentPopulations));
                 }
                 if (data.curriculumPlans !== undefined) {
                     let plans = data.curriculumPlans || [];
@@ -3075,53 +3092,31 @@ window.updateChartColor = function(key, color) {
     state.chartColors[key] = color;
     localStorage.setItem('freebook_chart_colors', JSON.stringify(state.chartColors));
     renderEstimateTab();
-    renderPopulationSection();
 };
 
+//
+
+// =========================================================
 window.moveEstimateRow = function(year, dept, dir) {
-    console.log("moveEstimateRow called:", year, dept, dir);
-    if (!state.isAdmin) {
-        alert("คุณไม่มีสิทธิ์ใช้งานส่วนนี้");
-        return;
-    }
+    if (!state.isAdmin) return;
     const yearData = state.studentEstimates[year];
-    if (!yearData) {
-        alert("ไม่พบข้อมูลปีการศึกษา");
-        return;
-    }
+    if (!yearData || !yearData._order) return;
     
-    // Ensure _order exists in case it was missed
-    if (!yearData._order) {
-        let depts = Object.keys(yearData).filter(k => k !== '_order');
-        yearData._order = depts.sort().join(',');
-    }
-    
-    const order = yearData._order.split(',');
-    const idx = order.indexOf(dept);
-    if (idx === -1) {
-        alert("ไม่พบข้อมูลแผนกในระบบจัดเรียง: " + dept);
-        return;
-    }
+    let currentOrder = yearData._order.split(',');
+    const idx = currentOrder.indexOf(dept);
+    if (idx === -1) return;
     
     const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= order.length) return;
+    if (newIdx < 0 || newIdx >= currentOrder.length) return;
     
-    // Swap
-    const temp = order[newIdx];
-    order[newIdx] = order[idx];
-    order[idx] = temp;
+    const temp = currentOrder[idx];
+    currentOrder[idx] = currentOrder[newIdx];
+    currentOrder[newIdx] = temp;
     
-    yearData._order = order.join(',');
-    
-    // Update memory and force sync
-    state.studentEstimates[year] = yearData;
+    yearData._order = currentOrder.join(',');
     saveEstimatesToStorage();
-    
-    // Re-render
-    renderEstimateTab();
-    renderPopulationSection();
+    renderEstimateTab(year);
 };
-
 
 // =========================================================
 // POPULATION SECTION LOGIC (Voc 1, 2, 3)
@@ -3144,7 +3139,7 @@ function initPopulationEvents() {
             const year = document.getElementById('estimateYearSelect').value;
             if (!year) return;
             
-            if (confirm('ต้องการดึงรายชื่อแผนกวิชาทั้งหมดที่มีในปีการศึกษา ' + year + ' มาสร้างตารางจำนวนนักเรียนหรือไม่? (ข้อมูลเดิมในตารางนี้จะถูกคงไว้ แผนกใหม่จะถูกเพิ่ม)')) {
+            if (confirm('ต้องการดึงรายชื่อแผนกวิชาทั้งหมดที่มีในปีการศึกษา ' + year + ' มาสร้างในตารางให้ทันที ยืนยันหรือไม่? (หมายเหตุ: ระบบจะไม่ลบแผนกวิชาเดิมที่มีอยู่แล้ว)')) {
                 const yearOrders = state.orders.filter(o => o.year == year);
                 const depts = [...new Set(yearOrders.map(o => o.dept))];
                 
@@ -3156,7 +3151,7 @@ function initPopulationEvents() {
                 
                 let added = 0;
                 depts.forEach(d => {
-                    if (!state.studentPopulations[year][d]) {
+                    if (!state.studentPopulations[year][d] && d !== '_order' && d !== 'updateDate') {
                         state.studentPopulations[year][d] = { v1: 0, v2: 0, v3: 0 };
                         if (!currentOrder.includes(d)) currentOrder.push(d);
                         added++;
@@ -3169,76 +3164,87 @@ function initPopulationEvents() {
                 renderPopulationSection();
                 
                 if (added > 0) {
-                    showToast('เพิ่ม ' + added + ' แผนกวิชาเรียบร้อยแล้ว', 'success');
+                    alert('ดึงรายชื่อสำเร็จ เพิ่มไปทั้งหมด ' + added + ' แผนก');
                 } else {
-                    showToast('แผนกวิชาทั้งหมดมีอยู่ในตารางแล้ว', 'info');
+                    alert('ไม่มีแผนกใหม่ให้ดึง (แผนกทั้งหมดมีในตารางแล้ว)');
                 }
             }
         });
     }
-}
 
-function editPopulationCell(year, dept, field) {
-    if (!state.isAdmin) return;
-    
-    const yearData = state.studentPopulations[year];
-    if (!yearData || !yearData[dept]) return;
-    
-    let label = field === 'v1' ? 'ปวช.1' : (field === 'v2' ? 'ปวช.2' : 'ปวช.3');
-    
-    const currentVal = yearData[dept][field] || 0;
-    const input = prompt(ระบุจำนวนนักเรียน  แผนกวิชา :, currentVal);
-    
-    if (input !== null) {
-        const val = parseInt(input, 10);
-        if (!isNaN(val) && val >= 0) {
-            yearData[dept][field] = val;
-            yearData.updateDate = new Date().toISOString();
+    const addBtn = document.getElementById('addPopulationRowBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', () => {
+            if (!state.isAdmin) return;
+            const year = document.getElementById('estimateYearSelect').value;
+            if (!year) {
+                alert('กรุณาเลือกปีการศึกษาก่อน');
+                return;
+            }
+            const dept = prompt('กรอก "แผนกวิชา" ที่ต้องการเพิ่ม:');
+            if (!dept || dept.trim() === '') return;
+            
+            const deptNorm = normalizeText(dept);
+            if (!state.studentPopulations[year]) state.studentPopulations[year] = { _order: [], updateDate: new Date().toISOString() };
+            
+            let currentOrder = Array.isArray(state.studentPopulations[year]._order) ? state.studentPopulations[year]._order : (state.studentPopulations[year]._order ? state.studentPopulations[year]._order.split(',') : []);
+
+            if (state.studentPopulations[year][deptNorm]) {
+                alert('แผนกนี้มีอยู่แล้วในปีการศึกษานี้');
+                return;
+            }
+            
+            state.studentPopulations[year][deptNorm] = { v1: 0, v2: 0, v3: 0 };
+            currentOrder.push(deptNorm);
+            state.studentPopulations[year]._order = currentOrder.join(',');
+            state.studentPopulations[year].updateDate = new Date().toISOString();
+            
             savePopulationsToStorage();
             renderPopulationSection();
-        } else if (input.trim() === '') {
-            yearData[dept][field] = 0;
-            yearData.updateDate = new Date().toISOString();
-            savePopulationsToStorage();
-            renderPopulationSection();
-        } else {
-            alert("กรุณากรอกตัวเลขที่ถูกต้อง");
-        }
+        });
     }
 }
 
-function removePopulationRow(year, dept) {
+function savePopulationsToStorage() {
+    localStorage.setItem('freebook_student_populations', JSON.stringify(state.studentPopulations));
+    syncToFirebase('studentPopulations', state.studentPopulations);
+}
+
+function saveShowPopulationToStorage() {
+    localStorage.setItem('freebook_show_student_population', state.showStudentPopulation);
+    syncToFirebase('showStudentPopulation', state.showStudentPopulation);
+}
+
+function deletePopulationRow(year, dept) {
     if (!state.isAdmin) return;
-    
-    if (confirm('ต้องการลบข้อมูลแผนก ' + dept + ' ออกจากตารางจำนวนนักเรียนหรือไม่?')) {
+    if (confirm('ต้องการลบแผนก ' + dept + ' ออกจากตารางจำนวนนักเรียนใช่หรือไม่?')) {
         delete state.studentPopulations[year][dept];
         
-        let currentOrder = state.studentPopulations[year]._order.split(',');
+        let currentOrder = Array.isArray(state.studentPopulations[year]._order) ? state.studentPopulations[year]._order : (state.studentPopulations[year]._order ? state.studentPopulations[year]._order.split(',') : []);
         currentOrder = currentOrder.filter(d => d !== dept);
-        state.studentPopulations[year]._order = currentOrder.join(',');
         
+        state.studentPopulations[year]._order = currentOrder.join(',');
         state.studentPopulations[year].updateDate = new Date().toISOString();
+        
         savePopulationsToStorage();
         renderPopulationSection();
     }
 }
 
-function formatThaiDate(isoString) {
-    if (!isoString) return '-';
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return '-';
+function updatePopulationField(year, dept, field, value) {
+    if (!state.isAdmin) return;
+    const num = parseInt(value) || 0;
+    if (!state.studentPopulations[year]) return;
+    if (!state.studentPopulations[year][dept]) return;
     
-    const day = d.getDate();
-    const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-    const month = months[d.getMonth()];
-    const year = d.getFullYear() + 543;
-    const hours = String(d.getHours()).padStart(2, '0');
-    const mins = String(d.getMinutes()).padStart(2, '0');
-    
-    return ${day}   เวลา : น.;
+    state.studentPopulations[year][dept][field] = num;
+    state.studentPopulations[year].updateDate = new Date().toISOString();
+    savePopulationsToStorage();
+    renderPopulationSection(); // Re-render to update chart and totals
 }
 
 function renderPopulationSection() {
+    const targetYear = document.getElementById('estimateYearSelect')?.value || state.selectedYear;
     const section = document.getElementById('populationContentArea');
     const msg = document.getElementById('populationDisabledMessage');
     const toggle = document.getElementById('populationToggleSwitch');
@@ -3247,17 +3253,31 @@ function renderPopulationSection() {
     if (toggle) toggle.checked = state.showStudentPopulation;
     
     if (!state.showStudentPopulation && !state.isAdmin) {
-        section.style.display = 'none';
-        msg.style.display = 'block';
+        if(section) section.style.display = 'none';
+        if(msg) msg.style.display = 'block';
         return;
+    } else {
+        if(section) section.style.display = 'block';
+        if(msg) msg.style.display = 'none';
+    }
+
+    if (!state.studentPopulations[targetYear]) {
+        state.studentPopulations[targetYear] = { _order: [], updateDate: new Date().toISOString() };
     }
     
-    section.style.display = 'block';
-    msg.style.display = 'none';
+    const yearData = state.studentPopulations[targetYear];
     
-    const targetYear = document.getElementById('estimateYearSelect')?.value || state.selectedYear;
-    if (!targetYear) return;
-    
+    // Format date
+    if (updateLabel) {
+        if (yearData.updateDate) {
+            const d = new Date(yearData.updateDate);
+            const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+            updateLabel.innerText = `อัปเดตล่าสุด: ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()+543} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')} น.`;
+        } else {
+            updateLabel.innerText = 'อัปเดตล่าสุด: -';
+        }
+    }
+
     const tbody = document.getElementById('populationTableBody');
     const tfoot = document.getElementById('populationTableFoot');
     if (!tbody || !tfoot) return;
@@ -3265,127 +3285,173 @@ function renderPopulationSection() {
     tbody.innerHTML = '';
     tfoot.innerHTML = '';
     
-    if (!state.studentPopulations[targetYear]) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">ไม่มีข้อมูลจำนวนนักเรียนสำหรับปีการศึกษานี้ (เฉพาะ Admin ที่เพิ่มข้อมูลได้)</td></tr>';
-        if (window.populationChartInstance) {
-            window.populationChartInstance.destroy();
+    let currentOrder = Array.isArray(yearData._order) ? yearData._order : (yearData._order ? yearData._order.split(',') : []);
+    
+    // Auto-sync missing keys
+    Object.keys(yearData).forEach(k => {
+        if (k !== '_order' && k !== 'updateDate' && !currentOrder.includes(k)) {
+            currentOrder.push(k);
         }
-        document.getElementById('populationChartWrapper').style.display = 'none';
-        if(updateLabel) updateLabel.innerText = 'อัปเดตล่าสุด: -';
+    });
+
+    let sumV1 = 0, sumV2 = 0, sumV3 = 0, sumTotal = 0;
+    
+    if (currentOrder.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:2rem;">ไม่มีข้อมูล โปรดเพิ่มแผนกวิชา</td></tr>`;
+        
+        // Hide chart if no data
+        const chartW = document.getElementById('populationChartWrapper');
+        if (chartW) chartW.style.display = 'none';
+        
         return;
     }
-    
-    const yearData = state.studentPopulations[targetYear];
-    let depts = [];
-    if (yearData._order) {
-        depts = yearData._order.split(',').filter(d => yearData[d]);
-    } else {
-        depts = Object.keys(yearData).filter(k => k !== '_order' && k !== 'updateDate').sort();
-    }
-    
-    if (updateLabel) {
-        updateLabel.innerText = 'อัปเดตล่าสุด: ' + formatThaiDate(yearData.updateDate);
-    }
-    
-    if (depts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">ไม่มีข้อมูลแผนกวิชา กรุณากดปุ่ม "ดึงแผนกอัตโนมัติ"</td></tr>';
-        if (window.populationChartInstance) {
-            window.populationChartInstance.destroy();
-        }
-        document.getElementById('populationChartWrapper').style.display = 'none';
-        return;
-    }
-    
-    let sum1 = 0, sum2 = 0, sum3 = 0;
-    
-    depts.forEach((dept, idx) => {
-        const d = yearData[dept];
-        const v1 = d.v1 || 0;
-        const v2 = d.v2 || 0;
-        const v3 = d.v3 || 0;
-        const total = v1 + v2 + v3;
+
+    const labels = [];
+    const dsV1 = [];
+    const dsV2 = [];
+    const dsV3 = [];
+
+    currentOrder.forEach((dept, idx) => {
+        const dData = yearData[dept] || {v1:0, v2:0, v3:0};
+        const total = (parseInt(dData.v1)||0) + (parseInt(dData.v2)||0) + (parseInt(dData.v3)||0);
         
-        sum1 += v1;
-        sum2 += v2;
-        sum3 += v3;
-        
+        sumV1 += (parseInt(dData.v1)||0);
+        sumV2 += (parseInt(dData.v2)||0);
+        sumV3 += (parseInt(dData.v3)||0);
+        sumTotal += total;
+
+        labels.push(dept);
+        dsV1.push(parseInt(dData.v1)||0);
+        dsV2.push(parseInt(dData.v2)||0);
+        dsV3.push(parseInt(dData.v3)||0);
+
         const tr = document.createElement('tr');
-        const cellClass = state.isAdmin ? 'cursor:pointer; transition: background 0.2s;' : '';
-        const hoverAttr = state.isAdmin ? 'onmouseover="this.style.backgroundColor=\'#f1f5f9\'" onmouseout="this.style.backgroundColor=\'transparent\'"' : '';
-        
-        tr.innerHTML = 
-            <td class="text-center"></td>
-            <td><strong></strong></td>
-            <td class="text-center" style=""  onclick="editPopulationCell('', '', 'v1')"></td>
-            <td class="text-center" style=""  onclick="editPopulationCell('', '', 'v2')"></td>
-            <td class="text-center" style=""  onclick="editPopulationCell('', '', 'v3')"></td>
-            <td class="text-center" style="font-weight:bold; color:var(--primary-color); background:#eff6ff;"></td>
-            <td class="text-center admin-only hidden no-print">
-                <button class="btn btn-sm btn-outline-danger" style="padding:0.2rem 0.4rem;" onclick="removePopulationRow('', '')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+        tr.innerHTML = `
+            <td class="text-center">${idx + 1}</td>
+            <td><strong>${dept}</strong></td>
+            <td class="text-center">
+                ${state.isAdmin ? `<input type="number" class="form-control" style="text-align:center; max-width:100px; margin:0 auto;" value="${dData.v1||0}" onchange="updatePopulationField('${targetYear}', '${dept}', 'v1', this.value)">` : (dData.v1||0)}
             </td>
-        ;
+            <td class="text-center">
+                ${state.isAdmin ? `<input type="number" class="form-control" style="text-align:center; max-width:100px; margin:0 auto;" value="${dData.v2||0}" onchange="updatePopulationField('${targetYear}', '${dept}', 'v2', this.value)">` : (dData.v2||0)}
+            </td>
+            <td class="text-center">
+                ${state.isAdmin ? `<input type="number" class="form-control" style="text-align:center; max-width:100px; margin:0 auto;" value="${dData.v3||0}" onchange="updatePopulationField('${targetYear}', '${dept}', 'v3', this.value)">` : (dData.v3||0)}
+            </td>
+            <td class="text-center" style="color:var(--primary-color); font-weight:bold;">${total}</td>
+            <td class="text-center admin-only hidden no-print">
+                <div class="flex-gap" style="justify-content:center;">
+                    <button class="btn btn-sm btn-outline" style="padding:0.2rem 0.4rem;" onclick="movePopulationRow('${targetYear}', '${dept}', -1)" ${idx === 0 ? 'disabled' : ''} title="เลื่อนขึ้น"><i class="fa-solid fa-arrow-up"></i></button>
+                    <button class="btn btn-sm btn-outline" style="padding:0.2rem 0.4rem;" onclick="movePopulationRow('${targetYear}', '${dept}', 1)" ${idx === currentOrder.length - 1 ? 'disabled' : ''} title="เลื่อนลง"><i class="fa-solid fa-arrow-down"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" style="padding:0.2rem 0.4rem;" onclick="deletePopulationRow('${targetYear}', '${dept}')" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </td>
+        `;
         tbody.appendChild(tr);
     });
-    
-    const sumTotal = sum1 + sum2 + sum3;
-    
-    tfoot.innerHTML = 
-        <tr style="background:var(--bg-muted);">
-            <td colspan="2" class="text-right"><strong>รวมทั้งสิ้น:</strong></td>
-            <td class="text-center"><strong></strong></td>
-            <td class="text-center"><strong></strong></td>
-            <td class="text-center"><strong></strong></td>
-            <td class="text-center" style="color:var(--primary-color); background:#dbeafe;"><strong></strong></td>
+
+    tfoot.innerHTML = `
+        <tr style="background:var(--bg-muted); font-weight:bold;">
+            <td colspan="2" class="text-right">รวมทั้งหมด</td>
+            <td class="text-center">${sumV1}</td>
+            <td class="text-center">${sumV2}</td>
+            <td class="text-center">${sumV3}</td>
+            <td class="text-center" style="color:var(--primary-color); font-size:1.1rem;">${sumTotal}</td>
             <td class="admin-only hidden no-print"></td>
         </tr>
-    ;
+    `;
+
+    // Initialize/Update Chart
+    const chartW = document.getElementById('populationChartWrapper');
+    if (chartW) chartW.style.display = 'block';
     
-    if (state.isAdmin) {
-        document.querySelectorAll('#populationSection .admin-only').forEach(el => el.classList.remove('hidden'));
-    }
-    
-    // Chart
-    if (window.populationChartInstance) {
-        window.populationChartInstance.destroy();
-    }
-    
-    const chartCtx = document.getElementById('populationChart');
-    const chartWrapper = document.getElementById('populationChartWrapper');
-    if (chartCtx && chartWrapper) {
-        chartWrapper.style.display = 'block';
-        window.populationChartInstance = new Chart(chartCtx, {
+    const ctx = document.getElementById('populationChart');
+    if (ctx) {
+        if (state.charts.population) {
+            state.charts.population.destroy();
+        }
+        
+        const chartColors = [
+            '#3b82f6', // blue (V1)
+            '#10b981', // green (V2)
+            '#f59e0b'  // yellow/orange (V3)
+        ];
+
+        state.charts.population = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: depts,
+                labels: labels,
                 datasets: [
                     {
                         label: 'ปวช.1',
-                        data: depts.map(d => yearData[d].v1 || 0),
-                        backgroundColor: '#3b82f6'
+                        data: dsV1,
+                        backgroundColor: chartColors[0],
+                        borderWidth: 0
                     },
                     {
                         label: 'ปวช.2',
-                        data: depts.map(d => yearData[d].v2 || 0),
-                        backgroundColor: '#10b981'
+                        data: dsV2,
+                        backgroundColor: chartColors[1],
+                        borderWidth: 0
                     },
                     {
                         label: 'ปวช.3',
-                        data: depts.map(d => yearData[d].v3 || 0),
-                        backgroundColor: '#f59e0b'
+                        data: dsV3,
+                        backgroundColor: chartColors[2],
+                        borderWidth: 0
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'top', labels: { font: { family: "'Sarabun', sans-serif" } } }
-                },
                 scales: {
-                    y: { beginAtZero: true, stacked: true },
-                    x: { stacked: true }
+                    x: {
+                        stacked: false,
+                        grid: { display: false }
+                    },
+                    y: {
+                        stacked: false,
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    }
                 }
             }
         });
     }
+
+    if (state.isAdmin) {
+        document.querySelectorAll('#populationSection .admin-only').forEach(el => el.classList.remove('hidden'));
+    }
 }
+
+window.movePopulationRow = function(year, dept, dir) {
+    if (!state.isAdmin) return;
+    const yearData = state.studentPopulations[year];
+    if (!yearData || !yearData['_order']) return;
+    
+    let currentOrder = Array.isArray(yearData['_order']) ? yearData['_order'] : (yearData['_order'] ? yearData['_order'].split(',') : []);
+    const idx = currentOrder.indexOf(dept);
+    if (idx === -1) return;
+    
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= currentOrder.length) return;
+    
+    // Swap
+    const temp = currentOrder[idx];
+    currentOrder[idx] = currentOrder[newIdx];
+    currentOrder[newIdx] = temp;
+    
+    yearData['_order'] = currentOrder.join(',');
+    yearData.updateDate = new Date().toISOString();
+    savePopulationsToStorage();
+    renderPopulationSection();
+};
