@@ -479,16 +479,41 @@ function getUniqueSubjectKey(o) {
 // =========================================================
 
 async function initFirebaseConnection() {
-    firebaseConfigStr = localStorage.getItem('freebook_firebase_config') || "";
+    // Default config to ensure all devices/incognito modes can connect automatically
+    const DEFAULT_CONFIG = {
+        "apiKey": "AIzaSyAHUjcTlxOTGepWj8nRyfR9K8wwLx5EIvM",
+        "authDomain": "udontc-freebook.firebaseapp.com",
+        "databaseURL": "https://udontc-freebook-default-rtdb.asia-southeast1.firebasedatabase.app",
+        "projectId": "udontc-freebook",
+        "storageBucket": "udontc-freebook.firebasestorage.app",
+        "messagingSenderId": "410467848837",
+        "appId": "1:410467848837:web:68a1f9ebe56815cd1acfec",
+        "measurementId": "G-HK4E3GCKFJ"
+    };
 
-    if (!firebaseConfigStr) {
+    firebaseConfigStr = localStorage.getItem('freebook_firebase_config') || "";
+    let config;
+
+    const isDisabled = localStorage.getItem('freebook_firebase_disabled') === 'true';
+    if (isDisabled) {
         updateFirebaseStatusUI(false);
         isFirebaseConnected = false;
         return;
     }
 
+    if (!firebaseConfigStr) {
+        config = DEFAULT_CONFIG;
+        firebaseConfigStr = JSON.stringify(config);
+        localStorage.setItem('freebook_firebase_config', firebaseConfigStr);
+    } else {
+        try {
+            config = JSON.parse(firebaseConfigStr);
+        } catch(e) {
+            config = DEFAULT_CONFIG;
+        }
+    }
+
     try {
-        const config = JSON.parse(firebaseConfigStr);
         if (!firebase.apps.length) {
             firebaseApp = firebase.initializeApp(config);
         } else {
@@ -656,6 +681,7 @@ function initFirebaseConfigEvents() {
             saveFirebaseConfigBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...';
 
             localStorage.setItem('freebook_firebase_config', JSON.stringify(parsedConfig));
+            localStorage.removeItem('freebook_firebase_disabled');
             
             // Simple reload to initialize Firebase cleanly
             window.location.reload();
@@ -668,6 +694,7 @@ function initFirebaseConfigEvents() {
 
             if (confirm('ยกเลิกการเชื่อมต่อ Firebase และกลับไปใช้ LocalStorage หรือไม่?')) {
                 localStorage.removeItem('freebook_firebase_config');
+                localStorage.setItem('freebook_firebase_disabled', 'true');
                 isFirebaseConnected = false;
                 firebaseConfigStr = "";
                 updateFirebaseStatusUI(false);
