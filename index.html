@@ -121,7 +121,7 @@
                 <i class="fa-solid fa-file-invoice-dollar"></i> สรุปงบประมาณ & รายงาน สอศ.
             </button>
             <button class="tab-btn" id="estimateTabBtn" data-tab="tab-estimate">
-                <i class="fa-solid fa-users-gear"></i> ประมาณการ ปวช.1
+                <i class="fa-solid fa-users-gear"></i> ข้อมูลผู้เรียน
             </button>
             <button class="tab-btn admin-only hidden" data-tab="tab-audit">
                 <i class="fa-solid fa-shield-halved"></i> ตรวจสอบแผนการเรียน
@@ -532,14 +532,11 @@
         <section id="tab-estimate" class="tab-content">
             <div class="content-header no-print">
                 <div class="header-titles">
-                    <h2><i class="fa-solid fa-users-gear" style="color: #2563eb;"></i> ประมาณการผู้เรียน (รับใหม่ ปวช.1)</h2>
-                    <p>ระบบคำนวณและเก็บสถิติเพื่อใช้อ้างอิงสัดส่วนยอดจัดสรรหนังสือเทียบกับแผนรับนักศึกษาใหม่ </p>
+                    <h2><i class="fa-solid fa-users-gear" style="color: #2563eb;"></i> ข้อมูลผู้เรียน และ ประมาณการ</h2>
+                    <p>ระบบจัดเก็บสถิติจำนวนนักเรียนและประมาณการผู้เรียน ปวช.1</p>
                 </div>
                 <div class="header-actions flex-gap" style="align-items: center;">
-                    <div class="admin-only hidden no-print" style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-muted); padding:0.4rem 0.8rem; border-radius:var(--radius-full); border:1px solid var(--border-color);">
-                        <input type="checkbox" id="estimateToggleSwitch" style="width:1.2rem; height:1.2rem; cursor:pointer;">
-                        <label for="estimateToggleSwitch" style="margin:0; font-weight:600; cursor:pointer;" id="estimateToggleLabel">เปิดใช้งานแท็บนี้</label>
-                    </div>
+                    
                     <div>
                         <label style="font-size:0.8rem; font-weight:600; display:block;" class="mb-1">ปีการศึกษา:</label>
                         <select id="estimateYearSelect" class="form-select select-lg" style="min-width: 120px;"></select>
@@ -550,7 +547,80 @@
                 </div>
             </div>
 
-            <div class="printable-area-target" id="estimatePrintArea">
+            
+            <!-- POPULATION SECTION (NEW) -->
+            <div class="report-section mb-5" id="populationSection">
+                <div class="flex-gap mb-3" style="align-items:center; justify-content:space-between; flex-wrap:wrap;">
+                    <h3 style="color:var(--primary-color); border-left:4px solid var(--primary-color); padding-left:10px; margin:0;"><i class="fa-solid fa-users"></i> จำนวนนักเรียนทั้งหมด (ปวช.1 - ปวช.3)</h3>
+                    
+                    <div class="admin-only hidden no-print flex-gap" style="align-items:center; flex-wrap:wrap;">
+                        <span id="populationUpdateLabel" style="font-size:0.85rem; color:var(--text-secondary); background:var(--bg-muted); padding:0.4rem 0.8rem; border-radius:var(--radius-full);">อัปเดตล่าสุด: -</span>
+                        <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-muted); padding:0.4rem 0.8rem; border-radius:var(--radius-full); border:1px solid var(--border-color);">
+                            <input type="checkbox" id="populationToggleSwitch" style="width:1.2rem; height:1.2rem; cursor:pointer;">
+                            <label for="populationToggleSwitch" style="margin:0; font-weight:600; cursor:pointer;">แสดงตารางนี้</label>
+                        </div>
+                        <button class="btn btn-sm btn-outline" id="autoFillPopulationBtn" title="ดึงรายชื่อแผนกทั้งหมดที่มีในระบบมาสร้างตาราง">
+                            <i class="fa-solid fa-gears"></i> ดึงแผนกอัตโนมัติ
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Disabled message for Population -->
+                <div id="populationDisabledMessage" style="text-align:center; padding: 2rem; display:none; background:var(--bg-main); border-radius:var(--radius-md);" class="no-print">
+                    <p style="color:var(--text-muted); margin:0;"><i class="fa-solid fa-eye-slash"></i> ถูกปิดการแสดงผลไว้โดยผู้ดูแลระบบ</p>
+                </div>
+
+                <div id="populationContentArea">
+                    <!-- Chart -->
+                    <div class="chart-card full-width mb-4 no-print" style="display:none;" id="populationChartWrapper">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-bar"></i> กราฟจำนวนนักเรียน ปวช.1-3 แต่ละแผนก</h3>
+                        </div>
+                        <div class="chart-body" style="height: 350px;">
+                            <canvas id="populationChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th width="60" class="text-center">ที่</th>
+                                    <th>แผนกวิชา</th>
+                                    <th class="text-center" width="120">ปวช.1</th>
+                                    <th class="text-center" width="120">ปวช.2</th>
+                                    <th class="text-center" width="120">ปวช.3</th>
+                                    <th class="text-center" width="120" style="color:var(--primary-color);">รวมทั้งหมด</th>
+                                    <th class="text-center admin-only hidden no-print" width="80">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="populationTableBody">
+                                <!-- JS injected -->
+                            </tbody>
+                            <tfoot id="populationTableFoot">
+                                <!-- JS injected -->
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <hr style="border-color:var(--border-color); margin: 2rem 0;">
+
+            <!-- ESTIMATION SECTION -->
+            <div class="report-section" id="estimateSection">
+                <div class="flex-gap mb-3" style="align-items:center; justify-content:space-between; flex-wrap:wrap;">
+                    <h3 style="color:var(--secondary-color); border-left:4px solid var(--secondary-color); padding-left:10px; margin:0;"><i class="fa-solid fa-users-gear"></i> ประมาณการผู้เรียนรับใหม่ (ปวช.1)</h3>
+                    
+                    <div class="admin-only hidden no-print flex-gap" style="align-items:center;">
+                        <div style="display:flex; align-items:center; gap:0.5rem; background:var(--bg-muted); padding:0.4rem 0.8rem; border-radius:var(--radius-full); border:1px solid var(--border-color);">
+                            <input type="checkbox" id="estimateToggleSwitch" style="width:1.2rem; height:1.2rem; cursor:pointer;">
+                            <label for="estimateToggleSwitch" style="margin:0; font-weight:600; cursor:pointer;" id="estimateToggleLabel">แสดงตารางนี้</label>
+                        </div>
+                    </div>
+                </div>
+<div class="printable-area-target" id="estimatePrintArea">
                 <div class="table-print-header">
                     <h2>รายงานประมาณการยอดจัดสรรหนังสือเรียนฟรี ระดับชั้น ปวช.1</h2>
                     <p id="estimatePrintMeta">ประจำปีการศึกษา</p>
@@ -607,6 +677,7 @@
                         </tfoot>
                     </table>
                 </div>
+            </div>
             </div>
         </section>
 
