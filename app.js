@@ -993,6 +993,8 @@ function initImportExcelEvents() {
                 "ชื่อหนังสือ": "งานจักรยานยนต์",
                 "ผู้แต่ง": "สมชาย วณารักษ์",
                 "สำนักพิมพ์": "สำนักพิมพ์เอมพันธ์",
+                "เดือน ปี": "ก.พ. 67",
+                "ลำดับ สอศ. อนุมัติ": 1,
                 "จำนวน": 180,
                 "ราคาต่อเล่ม": 100
             },
@@ -1005,6 +1007,8 @@ function initImportExcelEvents() {
                 "ชื่อหนังสือ": "งานวัดละเอียดช่างยนต์",
                 "ผู้แต่ง": "ขนบ เพชรซ้อน",
                 "สำนักพิมพ์": "ศูนย์ส่งเสริมอาชีวะ",
+                "เดือน ปี": "ก.พ. 67",
+                "ลำดับ สอศ. อนุมัติ": 2,
                 "จำนวน": 180,
                 "ราคาต่อเล่ม": 119
             }
@@ -1059,6 +1063,8 @@ function initImportExcelEvents() {
                     const publisher = normalizeText(findVal(["สำนักพิมพ์", "ค่าย"]) || "ศูนย์หนังสือเมืองไทย");
                     const qty = Number(findVal(["จำนวน", "จำนวนเล่ม"])) || 180;
                     const price = Number(findVal(["ราคาต่อเล่ม", "ราคา/คน/เล่ม", "ราคา"])) || 100;
+                    const approvalMonthYear = findVal(["เดือน ปี", "เดือน/ปี", "เดือนปี", "ด/ป"]) || "";
+                    const vecSequence = findVal(["ลำดับที่ สอศ", "ลำดับ สอศ", "ลำดับที่สอศ", "สอศ.", "ลำดับ สอศ. อนุมัติ", "ลำดับ สอศ อนุมัติ"]) || "";
 
                     if (title || code) {
                         parsedRows.push({
@@ -1074,7 +1080,9 @@ function initImportExcelEvents() {
                             publisher: publisher || 'สำนักพิมพ์เอมพันธ์',
                             qty,
                             price,
-                            amount: qty * price
+                            amount: qty * price,
+                            approvalMonthYear,
+                            vecSequence
                         });
                     }
                 });
@@ -1175,6 +1183,8 @@ function renderExcelPreview(rows) {
             <td><code>${escapeHtml(r.code)}</code></td>
             <td>${escapeHtml(r.title)}</td>
             <td>${escapeHtml(r.publisher)}</td>
+            <td>${escapeHtml(r.approvalMonthYear || '-')}</td>
+            <td>${escapeHtml(r.vecSequence || '-')}</td>
             <td class="text-right">${r.qty}</td>
             <td class="text-right">${formatCurrency(r.price)}</td>
         `;
@@ -1251,6 +1261,9 @@ function populateFilterDropdowns() {
 
     const deptGradeSelectTab = document.getElementById('deptGradeSelectTab');
     deptGradeSelectTab.onchange = renderDepartmentTab;
+
+    const toggleDeptExtraCols = document.getElementById('toggleDeptExtraCols');
+    if (toggleDeptExtraCols) toggleDeptExtraCols.onchange = renderDepartmentTab;
 
     // Tab 4 Selector
     const pubSelectTab = document.getElementById('pubSelectTab');
@@ -1927,6 +1940,8 @@ function renderMasterTable() {
             <td><strong>${escapeHtml(item.title)}</strong></td>
             <td>${escapeHtml(item.author || '-')}</td>
             <td>${escapeHtml(item.publisher)}</td>
+            <td>${escapeHtml(item.approvalMonthYear || '-')}</td>
+            <td>${escapeHtml(item.vecSequence || '-')}</td>
             <td class="text-right">${Number(item.qty).toLocaleString()}</td>
             <td class="text-right">${formatCurrency(item.price)}</td>
             <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
@@ -1954,6 +1969,7 @@ function renderDepartmentTab() {
     const activeOrders = getFilteredOrdersByTerm();
     const selectedDept = document.getElementById('deptSelectTab').value;
     const selectedGrade = document.getElementById('deptGradeSelectTab').value;
+    const showExtraCols = document.getElementById('toggleDeptExtraCols') ? document.getElementById('toggleDeptExtraCols').checked : false;
 
     const container = document.getElementById('departmentDetailsView');
     container.innerHTML = '';
@@ -2021,6 +2037,7 @@ function renderDepartmentTab() {
                                     <th>ชื่อหนังสือ / ชื่อวิชา</th>
                                     <th>ผู้แต่ง</th>
                                     <th>สำนักพิมพ์</th>
+                                    ${showExtraCols ? `<th>เดือน/ปี</th><th>ลำดับ สอศ. อนุมัติ</th>` : ''}
                                     <th class="text-right">จำนวน (เล่ม)</th>
                                     <th class="text-right">ราคา/เล่ม</th>
                                     <th class="text-right">รวมเงิน (บาท)</th>
@@ -2034,6 +2051,7 @@ function renderDepartmentTab() {
                                         <td><strong>${escapeHtml(item.title)}</strong></td>
                                         <td>${escapeHtml(item.author || '-')}</td>
                                         <td>${escapeHtml(item.publisher)}</td>
+                                        ${showExtraCols ? `<td>${escapeHtml(item.approvalMonthYear || '-')}</td><td>${escapeHtml(item.vecSequence || '-')}</td>` : ''}
                                         <td class="text-right">${item.qty.toLocaleString()}</td>
                                         <td class="text-right">${formatCurrency(item.price)}</td>
                                         <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
@@ -2111,6 +2129,8 @@ function renderPublisherTab() {
                                 <th>รหัสวิชา</th>
                                 <th>ชื่อหนังสือ</th>
                                 <th>ผู้แต่ง</th>
+                                <th>เดือน/ปี</th>
+                                <th>ลำดับ สอศ. อนุมัติ</th>
                                 <th class="text-right">จำนวน</th>
                                 <th class="text-right">ราคา/เล่ม</th>
                                 <th class="text-right">รวมเงิน</th>
@@ -2125,6 +2145,8 @@ function renderPublisherTab() {
                                     <td><code>${escapeHtml(item.code)}</code></td>
                                     <td><strong>${escapeHtml(item.title)}</strong></td>
                                     <td>${escapeHtml(item.author || '-')}</td>
+                                    <td>${escapeHtml(item.approvalMonthYear || '-')}</td>
+                                    <td>${escapeHtml(item.vecSequence || '-')}</td>
                                     <td class="text-right">${item.qty.toLocaleString()}</td>
                                     <td class="text-right">${formatCurrency(item.price)}</td>
                                     <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
@@ -2271,6 +2293,8 @@ function initFormEvents() {
         const editId = document.getElementById('editBookId').value;
         const year = Number(document.getElementById('bookYear').value) || 2569;
         const semester = document.getElementById('bookSemester').value;
+        const approvalMonthYear = document.getElementById('approvalMonthYear').value.trim();
+        const vecSequence = document.getElementById('vecSequence').value.trim();
         
         // Clean & Normalize Text Input Fields
         const dept = normalizeText(document.getElementById('bookDept').value);
@@ -2289,7 +2313,7 @@ function initFormEvents() {
             if (index !== -1) {
                 state.orders[index] = {
                     ...state.orders[index],
-                    year, semester, dept, grade, code, title, author, publisher, qty, price, amount
+                    year, semester, approvalMonthYear, vecSequence, dept, grade, code, title, author, publisher, qty, price, amount
                 };
                 showToast('อัปเดตข้อมูลหนังสือเรียบร้อยแล้ว', 'success');
             }
@@ -2314,7 +2338,7 @@ function initFormEvents() {
                 const newId = 'BK-' + String(state.orders.length + 1).padStart(3, '0');
                 state.orders.push({
                     id: newId,
-                    year, semester, itemNo: state.orders.length + 1,
+                    year, semester, approvalMonthYear, vecSequence, itemNo: state.orders.length + 1,
                     dept, grade, code, title, author, publisher, qty, price, amount
                 });
                 showToast('เพิ่มรายการหนังสือใหม่สำเร็จ', 'success');
@@ -2351,6 +2375,8 @@ function editBook(id) {
     document.getElementById('editBookId').value = item.id;
     document.getElementById('bookYear').value = item.year || 2569;
     document.getElementById('bookSemester').value = item.semester || 'ภาคเรียนที่ 1';
+    document.getElementById('approvalMonthYear').value = item.approvalMonthYear || '';
+    document.getElementById('vecSequence').value = item.vecSequence || '';
     document.getElementById('bookDept').value = item.dept;
     document.getElementById('bookGrade').value = item.grade;
     document.getElementById('bookCode').value = item.code;
@@ -2383,10 +2409,10 @@ function initExportEvents() {
     document.getElementById('exportExcelBtn').addEventListener('click', () => {
         const activeOrders = getFilteredOrdersByTerm();
         let csvContent = "\uFEFF";
-        csvContent += "ปีการศึกษา,ภาคเรียน,ลำดับ,แผนกวิชา,ระดับชั้น,รหัสวิชา,ชื่อหนังสือ,ผู้แต่ง,สำนักพิมพ์,จำนวน,ราคาต่อเล่ม,รวมเงิน\n";
+        csvContent += "ปีการศึกษา,ภาคเรียน,เดือน/ปี,ลำดับ สอศ. อนุมัติ,ลำดับ,แผนกวิชา,ระดับชั้น,รหัสวิชา,ชื่อหนังสือ,ผู้แต่ง,สำนักพิมพ์,จำนวน,ราคาต่อเล่ม,รวมเงิน\n";
 
         activeOrders.forEach((o, i) => {
-            csvContent += `"${o.year}","${o.semester}","${i+1}","${o.dept}","${o.grade}","${o.code}","${o.title}","${o.author || ''}","${o.publisher}","${o.qty}","${o.price}","${o.amount}"\n`;
+            csvContent += `"${o.year}","${o.semester}","${o.approvalMonthYear || ''}","${o.vecSequence || ''}","${i+1}","${o.dept}","${o.grade}","${o.code}","${o.title}","${o.author || ''}","${o.publisher}","${o.qty}","${o.price}","${o.amount}"\n`;
         });
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

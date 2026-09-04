@@ -328,6 +328,8 @@
                             <th>ชื่อหนังสือ</th>
                             <th>ผู้แต่ง</th>
                             <th>สำนักพิมพ์</th>
+                            <th>เดือน/ปี</th>
+                            <th>ลำดับ สอศ. อนุมัติ</th>
                             <th class="text-right">จำนวน</th>
                             <th class="text-right">ราคา/เล่ม</th>
                             <th class="text-right">รวมเงิน (บาท)</th>
@@ -375,6 +377,12 @@
                             <option value="ปวช.2">ปวช.2</option>
                             <option value="ปวช.3">ปวช.3</option>
                         </select>
+                    </div>
+                    <div style="margin-right: 0.5rem; align-self: flex-end; padding-bottom: 0.5rem;">
+                        <label style="display:inline-flex; align-items:center; gap:0.3rem; font-size:0.85rem; cursor:pointer; color:var(--text-main);">
+                            <input type="checkbox" id="toggleDeptExtraCols"> 
+                            แสดง เดือน/ปี, สอศ.
+                        </label>
                     </div>
                     <button class="btn btn-primary" onclick="window.print()" style="height: 38px;">
                         <i class="fa-solid fa-print"></i> พิมพ์ (Print)
@@ -818,7 +826,7 @@
                     <h4 class="mb-1"><i class="fa-solid fa-circle-info"></i> คำแนะนำและโครงสร้างไฟล์ Excel:</h4>
                     <p style="font-size:0.85rem;" class="mb-2">สามารถใช้ไฟล์ Excel (.xlsx, .xls) หรือ CSV ที่มีหัวตาราง (Header) ดังนี้:</p>
                     <div class="excel-headers-demo mb-2">
-                        <code>ปีการศึกษา</code> | <code>ภาคเรียน</code> | <code>แผนกวิชา</code> | <code>ระดับชั้น</code> | <code>รหัสวิชา</code> | <code>ชื่อหนังสือ</code> | <code>ผู้แต่ง</code> | <code>สำนักพิมพ์</code> | <code>จำนวน</code> | <code>ราคาต่อเล่ม</code>
+                        <code>ปีการศึกษา</code> | <code>ภาคเรียน</code> | <code>แผนกวิชา</code> | <code>ระดับชั้น</code> | <code>รหัสวิชา</code> | <code>ชื่อหนังสือ</code> | <code>ผู้แต่ง</code> | <code>สำนักพิมพ์</code> | <code>เดือน ปี</code> | <code>ลำดับ สอศ. อนุมัติ</code> | <code>จำนวน</code> | <code>ราคาต่อเล่ม</code>
                     </div>
                     <button id="downloadExcelTemplateBtn" class="btn btn-sm btn-secondary">
                         <i class="fa-solid fa-download"></i> ดาวน์โหลดไฟล์แม่แบบ Excel ต้นแบบ (.xlsx)
@@ -851,6 +859,8 @@
                                     <th>รหัสวิชา</th>
                                     <th>ชื่อหนังสือ</th>
                                     <th>สำนักพิมพ์</th>
+                                    <th>เดือน/ปี</th>
+                                    <th>ลำดับ สอศ. อนุมัติ</th>
                                     <th class="text-right">จำนวน</th>
                                     <th class="text-right">ราคา</th>
                                 </tr>
@@ -891,6 +901,16 @@
                             <option value="ภาคเรียนที่ 1" selected>ภาคเรียนที่ 1</option>
                             <option value="ภาคเรียนที่ 2">ภาคเรียนที่ 2</option>
                         </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="approvalMonthYear">เดือน ปี ที่อนุมัติ:</label>
+                        <input type="text" id="approvalMonthYear" class="form-input" placeholder="เช่น ก.พ. 67">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="vecSequence">ลำดับ สอศ. อนุมัติ:</label>
+                        <input type="text" id="vecSequence" class="form-input" placeholder="เช่น 1, 2">
                     </div>
 
                     <div class="form-group">

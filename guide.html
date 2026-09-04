@@ -582,6 +582,26 @@ if (existingIndex !== -1) {
                 <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 4. ดันโค้ดทั้งหมดขึ้น GitHub ขุมหลัก (main)</code>
                 <code style="display:block;">git push origin main</code>
             </div>
+
+            <h3 style="margin-top: 2rem; color: var(--secondary);"><i class="fa-solid fa-code-branch"></i> กรณีที่ 3: การสร้างสาขารอง (Branch) เพื่อทดสอบโค้ดก่อนนำขึ้นจริง</h3>
+            <p>เพื่อความปลอดภัยและเป็นมาตรฐานสากล หากต้องการแก้ไขโค้ดใหม่ (เช่น ทดลองฟีเจอร์ใหม่) ควรสร้าง "สาขารอง" (Branch) แยกออกมาก่อน เมื่อทดสอบบนเครื่องตัวเองจนมั่นใจแล้วค่อยรวมกลับไปที่สาขาหลัก (main):</p>
+            <div class="code-block" style="background:var(--dark); color:var(--white); padding: 1rem; border-radius:var(--radius); margin-top:0.5rem;">
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 1. สร้างสาขารองชื่อ 'test-feature' และสลับเข้าไปทำงานทันที</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git checkout -b test-feature</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 2. แก้ไขโค้ดของคุณตามต้องการ เมื่อเสร็จแล้วให้บันทึกประวัติลงสาขานี้</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git add .</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git commit -m "ทดลองเพิ่มลูกเล่นใหม่"</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 3. เมื่อพอใจแล้ว สลับกลับมาที่สาขาหลัก (main)</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git checkout main</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 4. ดึงโค้ดจากสาขารอง (test-feature) มารวมเข้ากับสาขาหลัก (main)</code>
+                <code style="display:block; margin-bottom: 0.5rem;">git merge test-feature</code>
+                <br>
+                <code style="display:block; margin-bottom: 0.5rem; color:#a5b4fc;"># 5. ดันโค้ดที่รวมเสร็จสมบูรณ์แล้วขึ้นระบบบนเว็บ GitHub (อัปขึ้น Production)</code>
+                <code style="display:block;">git push origin main</code>
+            </div>
             
             <div style="background: #fffbeb; padding: 1rem; border-left: 4px solid #f59e0b; margin-top: 1.5rem; border-radius: 4px;">
                 <strong><i class="fa-solid fa-lightbulb" style="color:#f59e0b;"></i> เคล็ดลับเพิ่มเติม:</strong> หากคุณใช้งานร่วมกับผู้อื่น หรือแก้ไขโค้ดจากคอมพิวเตอร์หลายเครื่อง แนะนำให้รัน <code>git pull origin main</code> ก่อนเริ่มทำงานเสมอ เพื่อดึงโค้ดเวอร์ชันล่าสุดจากเซิร์ฟเวอร์มาไว้ที่เครื่องเรา ป้องกันปัญหาโค้ดทับซ้อนกัน (Merge Conflict)
