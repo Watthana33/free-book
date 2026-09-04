@@ -3165,7 +3165,7 @@ function initPopulationEvents() {
             const year = document.getElementById('estimateYearSelect').value;
             if (!year) return;
             
-            if (confirm('ต้องการดึงรายชื่อแผนกวิชาทั้งหมดที่มีในปีการศึกษา ' + year + ' มาสร้างในตารางให้ทันที ยืนยันหรือไม่? (หมายเหตุ: ระบบจะไม่ลบแผนกวิชาเดิมที่มีอยู่แล้ว)')) {
+            if (confirm('ต้องการดึงรายชื่อแผนกวิชา และคำนวณยอดจำนวนนักเรียน (จากจำนวนหนังสือที่สั่งเยอะที่สุดในแต่ละระดับชั้น) มาใส่ตารางให้ทันที ยืนยันหรือไม่? (หมายเหตุ: ข้อมูลตัวเลขเดิมจะถูกเขียนทับด้วยยอดสูงสุดที่คำนวณได้)')) {
                 const yearOrders = state.orders.filter(o => o.year == year);
                 const depts = [...new Set(yearOrders.map(o => o.dept))];
                 
@@ -3175,13 +3175,25 @@ function initPopulationEvents() {
                 
                 let currentOrder = Array.isArray(state.studentPopulations[year]._order) ? state.studentPopulations[year]._order : (state.studentPopulations[year]._order ? state.studentPopulations[year]._order.split(',') : []);
                 
-                let added = 0;
+                let addedOrUpdated = 0;
                 depts.forEach(d => {
-                    if (!state.studentPopulations[year][d] && d !== '_order' && d !== 'updateDate') {
-                        state.studentPopulations[year][d] = { v1: 0, v2: 0, v3: 0 };
-                        if (!currentOrder.includes(d)) currentOrder.push(d);
-                        added++;
-                    }
+                    if (d === '_order' || d === 'updateDate') return;
+
+                    // Calculate max qty for each grade from orders
+                    const dOrders = yearOrders.filter(o => o.dept === d);
+                    const getGradeMax = (gradeName) => {
+                        const gradeOrders = dOrders.filter(o => o.grade === gradeName);
+                        return gradeOrders.length > 0 ? Math.max(...gradeOrders.map(o => o.qty || 0)) : 0;
+                    };
+
+                    const v1 = getGradeMax('ปวช.1');
+                    const v2 = getGradeMax('ปวช.2');
+                    const v3 = getGradeMax('ปวช.3');
+
+                    state.studentPopulations[year][d] = { v1, v2, v3 };
+                    
+                    if (!currentOrder.includes(d)) currentOrder.push(d);
+                    addedOrUpdated++;
                 });
                 
                 state.studentPopulations[year]._order = currentOrder.join(',');
@@ -3189,10 +3201,10 @@ function initPopulationEvents() {
                 savePopulationsToStorage();
                 renderPopulationSection();
                 
-                if (added > 0) {
-                    alert('ดึงรายชื่อสำเร็จ เพิ่มไปทั้งหมด ' + added + ' แผนก');
+                if (addedOrUpdated > 0) {
+                    alert('ดึงข้อมูลและอัปเดตจำนวนผู้เรียนสำเร็จ ' + addedOrUpdated + ' แผนก');
                 } else {
-                    alert('ไม่มีแผนกใหม่ให้ดึง (แผนกทั้งหมดมีในตารางแล้ว)');
+                    alert('ไม่มีข้อมูลแผนกในระบบสำหรับปีการศึกษานี้ (ต้องเพิ่มรายการหนังสือก่อน)');
                 }
             }
         });
