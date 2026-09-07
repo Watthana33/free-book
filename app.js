@@ -268,6 +268,7 @@ let state = {
     adminPassHash: DEFAULT_PASS_HASH,
     targetSubjects: { ...DEFAULT_TARGET_SUBJECTS },
     showSubjectCheckDashboard: true,
+    showTrackingTab: false,
     showEstimateTab: true,
     studentPopulations: {},
     showStudentPopulation: true,
@@ -308,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDate();
     initGlobalTermSelector();
     initTabNavigation();
+    initTrackingEvents();
     initAdminEvents();
     initFilterEvents();
     initFormEvents();
@@ -394,6 +396,8 @@ function loadStateFromStorage() {
         localStorage.setItem('freebook_custom_years', JSON.stringify(state.customYears));
     }
 
+    const savedShowTracking = localStorage.getItem('freebook_show_tracking_tab');
+    if (savedShowTracking !== null) state.showTrackingTab = savedShowTracking === 'true';
     const savedShowCheck = localStorage.getItem('freebook_show_check_dashboard');
     if (savedShowCheck !== null) state.showSubjectCheckDashboard = savedShowCheck === 'true';
     
@@ -844,19 +848,46 @@ function initAdminEvents() {
     const closeAdminModalBtn = document.getElementById('closeAdminModalBtn');
     const cancelAdminBtn = document.getElementById('cancelAdminBtn');
     const submitAdminLoginBtn = document.getElementById('submitAdminLoginBtn');
+    const adminEmailInput = document.getElementById('adminEmailInput');
     const adminPasswordInput = document.getElementById('adminPasswordInput');
+    const adminLoginError = document.getElementById('adminLoginError');
+
+    if (window.firebase && firebase.apps.length > 0) {
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                state.isAdmin = true;
+                localStorage.setItem('freebook_is_admin', 'true');
+                updateAdminUI();
+            } else {
+                state.isAdmin = false;
+                localStorage.setItem('freebook_is_admin', 'false');
+                updateAdminUI();
+            }
+        });
+    }
 
     adminToggleBtn.addEventListener('click', () => {
         if (state.isAdmin) {
-            state.isAdmin = false;
-            localStorage.setItem('freebook_is_admin', 'false');
-            updateAdminUI();
-            showToast('สลับเข้าสู่โหมดทั่วไป (Viewer)', 'info');
+            if (window.firebase && firebase.apps.length > 0 && firebase.auth().currentUser) {
+                firebase.auth().signOut().then(() => {
+                    showToast('ออกจากระบบ Admin เรียบร้อย', 'info');
+                }).catch(err => {
+                    console.error("Logout Error", err);
+                    showToast('เกิดข้อผิดพลาดในการออกจากระบบ', 'error');
+                });
+            } else {
+                state.isAdmin = false;
+                localStorage.setItem('freebook_is_admin', 'false');
+                updateAdminUI();
+                showToast('สลับเข้าสู่โหมดทั่วไป (Viewer)', 'info');
+            }
         } else {
+            if (adminEmailInput) adminEmailInput.value = '';
             adminPasswordInput.value = '';
-            document.getElementById('adminLoginError').classList.add('hidden');
+            adminLoginError.classList.add('hidden');
             adminLoginModal.classList.remove('hidden');
-            adminPasswordInput.focus();
+            if (adminEmailInput) adminEmailInput.focus();
+            else adminPasswordInput.focus();
         }
     });
 
@@ -864,26 +895,39 @@ function initAdminEvents() {
     closeAdminModalBtn.addEventListener('click', closeModal);
     cancelAdminBtn.addEventListener('click', closeModal);
 
-    submitAdminLoginBtn.addEventListener('click', async () => {
+    submitAdminLoginBtn.addEventListener('click', () => {
+        const email = adminEmailInput ? adminEmailInput.value.trim() : 'admin@freebook.com';
         const password = adminPasswordInput.value.trim();
-        const inputHash = await sha256(password);
-
-        if (inputHash === state.adminPassHash) {
-            state.isAdmin = true;
-            localStorage.setItem('freebook_is_admin', 'true');
-            updateAdminUI();
-            closeModal();
-            showToast('เข้าสู่โหมด Admin สำเร็จ! สิทธิ์การแก้ไขข้อมูลทำงานแล้ว', 'success');
-        } else {
-            document.getElementById('adminLoginError').classList.remove('hidden');
+        
+        if (!window.firebase || firebase.apps.length === 0) {
+            adminLoginError.textContent = "ยังไม่ได้เชื่อมต่อ Firebase";
+            adminLoginError.classList.remove('hidden');
+            return;
         }
+
+        submitAdminLoginBtn.disabled = true;
+        submitAdminLoginBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังตรวจสอบ...';
+
+        firebase.auth().signInWithEmailAndPassword(email, password)
+            .then((userCredential) => {
+                closeModal();
+                showToast('เข้าสู่ระบบ Admin สำเร็จ!', 'success');
+            })
+            .catch((error) => {
+                adminLoginError.textContent = "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+                adminLoginError.classList.remove('hidden');
+                console.error(error.message);
+            })
+            .finally(() => {
+                submitAdminLoginBtn.disabled = false;
+                submitAdminLoginBtn.innerHTML = '<i class="fa-solid fa-key"></i> เข้าสู่ระบบ';
+            });
     });
 
     adminPasswordInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') submitAdminLoginBtn.click();
     });
 
-    // Change Password Modal Events
     const changePassBtn = document.getElementById('changePassBtn');
     const changePassModal = document.getElementById('changePassModal');
     const closeChangePassModalBtn = document.getElementById('closeChangePassModalBtn');
@@ -902,36 +946,52 @@ function initAdminEvents() {
     closeChangePassModalBtn.addEventListener('click', closePassModal);
     cancelChangePassBtn.addEventListener('click', closePassModal);
 
-    submitChangePassBtn.addEventListener('click', async () => {
-        const oldP = document.getElementById('oldPassInput').value.trim();
-        const newP = document.getElementById('newPassInput').value.trim();
-        const confirmP = document.getElementById('confirmPassInput').value.trim();
-        const errEl = document.getElementById('changePassError');
+    submitChangePassBtn.addEventListener('click', () => {
+        const oldPass = document.getElementById('oldPassInput').value.trim();
+        const newPass = document.getElementById('newPassInput').value.trim();
+        const confirmPass = document.getElementById('confirmPassInput').value.trim();
+        const errDiv = document.getElementById('changePassError');
 
-        const oldHash = await sha256(oldP);
-        if (oldHash !== state.adminPassHash) {
-            errEl.innerText = 'รหัสผ่านเดิมไม่ถูกต้อง';
-            errEl.classList.remove('hidden');
+        if (!oldPass || !newPass || !confirmPass) {
+            errDiv.textContent = 'กรุณากรอกข้อมูลให้ครบทุกช่อง';
+            errDiv.classList.remove('hidden');
+            return;
+        }
+        if (newPass !== confirmPass) {
+            errDiv.textContent = 'รหัสผ่านใหม่ไม่ตรงกัน';
+            errDiv.classList.remove('hidden');
+            return;
+        }
+        if (newPass.length < 6) {
+            errDiv.textContent = 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร';
+            errDiv.classList.remove('hidden');
             return;
         }
 
-        if (newP.length < 4) {
-            errEl.innerText = 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 4 ตัวอักษร';
-            errEl.classList.remove('hidden');
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            errDiv.textContent = 'กรุณาล็อกอินใหม่ก่อนเปลี่ยนรหัสผ่าน';
+            errDiv.classList.remove('hidden');
             return;
         }
 
-        if (newP !== confirmP) {
-            errEl.innerText = 'รหัสผ่านใหม่และการยืนยันไม่ตรงกัน';
-            errEl.classList.remove('hidden');
-            return;
-        }
+        submitChangePassBtn.disabled = true;
+        submitChangePassBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังบันทึก...';
 
-        const newHash = await sha256(newP);
-        state.adminPassHash = newHash;
-        localStorage.setItem('freebook_admin_pass_hash', newHash);
-        closePassModal();
-        showToast('เปลี่ยนรหัสผ่าน Admin สำเร็จเรียบร้อยแล้ว!', 'success');
+        const credential = firebase.auth.EmailAuthProvider.credential(user.email, oldPass);
+        user.reauthenticateWithCredential(credential).then(() => {
+            return user.updatePassword(newPass);
+        }).then(() => {
+            showToast('เปลี่ยนรหัสผ่านสำเร็จ', 'success');
+            closePassModal();
+        }).catch((error) => {
+            errDiv.textContent = 'รหัสผ่านเดิมไม่ถูกต้อง หรือเกิดข้อผิดพลาด';
+            errDiv.classList.remove('hidden');
+            console.error(error);
+        }).finally(() => {
+            submitChangePassBtn.disabled = false;
+            submitChangePassBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> บันทึกรหัสผ่านใหม่';
+        });
     });
 }
 
@@ -1197,6 +1257,34 @@ function renderExcelPreview(rows) {
 // =========================================================
 // 8. TAB NAVIGATION & RENDER ENGINE
 // =========================================================
+
+function initTrackingEvents() {
+    // Filters
+    const searchInput = document.getElementById('trackingSearchInput');
+    const deptFilter = document.getElementById('trackingDeptFilter');
+    const statusFilter = document.getElementById('trackingStatusFilter');
+    
+    if (searchInput) searchInput.addEventListener('input', renderTrackingTab);
+    if (deptFilter) deptFilter.addEventListener('change', renderTrackingTab);
+    if (statusFilter) statusFilter.addEventListener('change', renderTrackingTab);
+
+    // Modals
+    const updateModal = document.getElementById('trackingUpdateModal');
+    if (updateModal) {
+        document.getElementById('closeTrackingUpdateModalBtn').addEventListener('click', () => updateModal.classList.add('hidden'));
+        document.getElementById('cancelTrackingUpdateBtn').addEventListener('click', () => updateModal.classList.add('hidden'));
+        document.getElementById('saveTrackingUpdateBtn').addEventListener('click', saveTrackingUpdate);
+    }
+
+    const replaceModal = document.getElementById('trackingReplaceModal');
+    if (replaceModal) {
+        document.getElementById('closeTrackingReplaceModalBtn').addEventListener('click', () => replaceModal.classList.add('hidden'));
+        document.getElementById('cancelTrackingReplaceBtn').addEventListener('click', () => replaceModal.classList.add('hidden'));
+        document.getElementById('saveTrackingReplaceBtn').addEventListener('click', saveTrackingReplace);
+        document.getElementById('revertReplaceBtn').addEventListener('click', revertTrackingReplace);
+    }
+}
+
 function initTabNavigation() {
     const tabBtns = document.querySelectorAll('.tab-btn');
     tabBtns.forEach(btn => {
@@ -1274,7 +1362,223 @@ function populateFilterDropdowns() {
     pubSelectTab.onchange = renderPublisherTab;
 }
 
+
+function renderTrackingTab() {
+    const tbody = document.getElementById('trackingTableBody');
+    const deptFilter = document.getElementById('trackingDeptFilter');
+    if (!tbody || !deptFilter) return;
+
+    // Populate Dept filter if empty
+    if (deptFilter.options.length <= 1) {
+        const depts = [...new Set(state.orders.map(o => o.dept))].sort();
+        depts.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d; opt.textContent = d;
+            deptFilter.appendChild(opt);
+        });
+    }
+
+    const searchStr = (document.getElementById('trackingSearchInput').value || '').toLowerCase();
+    const selectedDept = deptFilter.value;
+    const selectedStatus = document.getElementById('trackingStatusFilter').value;
+
+    let filtered = getFilteredOrdersByTerm(); // uses selected year/term
+
+    filtered = filtered.filter(o => {
+        if (selectedDept !== 'ALL' && o.dept !== selectedDept) return false;
+        
+        const titleMatch = o.title.toLowerCase().includes(searchStr);
+        const codeMatch = (o.code || '').toLowerCase().includes(searchStr);
+        const repMatch = (o.remark || '').toLowerCase().includes(searchStr);
+        if (searchStr && !titleMatch && !codeMatch && !repMatch) return false;
+
+        const reqQty = o.qty || 0;
+        const recQty = o.receivedQty || 0;
+        const distQty = o.distributedQty || 0;
+        
+        if (selectedStatus === 'INCOMPLETE') {
+            if (recQty >= reqQty && distQty >= reqQty) return false;
+        } else if (selectedStatus === 'COMPLETE') {
+            if (recQty < reqQty || distQty < reqQty) return false;
+        }
+
+        return true;
+    });
+
+    tbody.innerHTML = '';
+    filtered.forEach((o, index) => {
+        const reqQty = o.qty || 0;
+        const recQty = o.receivedQty || 0;
+        const distQty = o.distributedQty || 0;
+        
+        let statusHtml = '';
+        if (recQty === 0 && distQty === 0) {
+            statusHtml = '<span class="badge" style="background:#fee2e2; color:#dc2626;">ยังไม่รับ</span>';
+        } else if (recQty >= reqQty && distQty >= reqQty) {
+            statusHtml = '<span class="badge" style="background:#d1fae5; color:#047857;">ครบถ้วน</span>';
+        } else {
+            statusHtml = '<span class="badge" style="background:#fef3c7; color:#d97706;">มาบางส่วน</span>';
+        }
+
+        let titleHtml = o.title;
+        if (o.isReplaced) {
+            titleHtml = `<div style="color:var(--primary-color); font-weight:600;">${o.title}</div>
+                         <div style="font-size:0.75rem; color:var(--text-muted);">มาแทน: ${o.originalTitle}</div>
+                         <div style="font-size:0.75rem; color:var(--text-secondary);"><i class="fa-solid fa-note-sticky"></i> ${o.remark}</div>`;
+        }
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="text-center">${index + 1}</td>
+            <td><span class="badge badge-dept">${o.dept}</span></td>
+            <td>${o.code || '-'}</td>
+            <td>${titleHtml}</td>
+            <td class="text-right"><strong>${reqQty.toLocaleString()}</strong></td>
+            <td class="text-right" style="color:${recQty < reqQty ? '#d97706' : '#047857'};">${recQty.toLocaleString()}${o.receiveDate ? `<br><small style="font-size:0.7rem; color:var(--text-muted);">${formatShortDate(o.receiveDate)}</small>` : ''}</td>
+            <td class="text-right" style="color:${distQty < reqQty ? '#d97706' : '#047857'};">${distQty.toLocaleString()}${o.distributeDate ? `<br><small style="font-size:0.7rem; color:var(--text-muted);">${formatShortDate(o.distributeDate)}</small>` : ''}</td>
+            <td class="text-center">${statusHtml}</td>
+            <td class="text-center admin-only ${state.isAdmin ? '' : 'hidden'}">
+                <button class="btn-table-action edit" title="อัปเดตยอดรับ/แจก" onclick="openTrackingUpdateModal('${o.id}')">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="btn-table-action" style="color:#8b5cf6; border-color:#c4b5fd;" title="เปลี่ยนหนังสือทดแทน" onclick="openTrackingReplaceModal('${o.id}')">
+                    <i class="fa-solid fa-right-left"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+window.openTrackingUpdateModal = function(id) {
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+    
+    document.getElementById('trackingUpdateBookId').value = id;
+    document.getElementById('trackingUpdateTitleText').textContent = order.title;
+    document.getElementById('trackingOrderedQty').value = order.qty || 0;
+    document.getElementById('trackingReceivedQty').value = order.receivedQty || 0;
+    document.getElementById('trackingDistributedQty').value = order.distributedQty || 0;
+    document.getElementById('trackingReceiveDate').value = order.receiveDate || '';
+    document.getElementById('trackingDistributeDate').value = order.distributeDate || '';
+    
+    document.getElementById('trackingUpdateModal').classList.remove('hidden');
+};
+
+window.saveTrackingUpdate = function() {
+    const id = document.getElementById('trackingUpdateBookId').value;
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+
+    order.receivedQty = parseInt(document.getElementById('trackingReceivedQty').value) || 0;
+    order.distributedQty = parseInt(document.getElementById('trackingDistributedQty').value) || 0;
+    order.receiveDate = document.getElementById('trackingReceiveDate').value;
+    order.distributeDate = document.getElementById('trackingDistributeDate').value;
+
+    saveOrdersToStorage();
+    renderTrackingTab();
+    showToast('อัปเดตยอดรับ-แจกเรียบร้อยแล้ว', 'success');
+    document.getElementById('trackingUpdateModal').classList.add('hidden');
+};
+
+window.openTrackingReplaceModal = function(id) {
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+    
+    document.getElementById('trackingReplaceBookId').value = id;
+    
+    const origTitle = order.isReplaced ? order.originalTitle : order.title;
+    document.getElementById('trackingReplaceOriginalText').textContent = origTitle;
+    
+    if (order.isReplaced) {
+        document.getElementById('replaceTitle').value = order.title;
+        document.getElementById('replacePrice').value = order.price;
+        document.getElementById('replacePublisher').value = order.publisher;
+        document.getElementById('replaceRemark').value = order.remark || '';
+        document.getElementById('revertReplaceBtn').style.display = 'block';
+    } else {
+        document.getElementById('replaceTitle').value = '';
+        document.getElementById('replacePrice').value = '';
+        document.getElementById('replacePublisher').value = '';
+        document.getElementById('replaceRemark').value = '';
+        document.getElementById('revertReplaceBtn').style.display = 'none';
+    }
+    
+    document.getElementById('trackingReplaceModal').classList.remove('hidden');
+};
+
+window.saveTrackingReplace = function() {
+    const id = document.getElementById('trackingReplaceBookId').value;
+    const order = state.orders.find(o => o.id === id);
+    if (!order) return;
+
+    const newTitle = document.getElementById('replaceTitle').value.trim();
+    const newPrice = parseFloat(document.getElementById('replacePrice').value);
+    const newPub = document.getElementById('replacePublisher').value.trim();
+    const remark = document.getElementById('replaceRemark').value.trim();
+
+    if (!newTitle || isNaN(newPrice) || !newPub || !remark) {
+        const err = document.getElementById('replaceErrorMsg');
+        err.textContent = 'กรุณากรอกข้อมูลให้ครบทุกช่อง';
+        err.classList.remove('hidden');
+        return;
+    }
+
+    if (!order.isReplaced) {
+        order.originalTitle = order.title;
+        order.originalPrice = order.price;
+        order.originalPublisher = order.publisher;
+        order.isReplaced = true;
+    }
+
+    order.title = newTitle;
+    order.price = newPrice;
+    order.publisher = newPub;
+    order.remark = remark;
+    order.amount = order.price * order.qty;
+
+    saveOrdersToStorage();
+    renderAllViews();
+    showToast('บันทึกการแทนที่หนังสือเรียบร้อยแล้ว', 'success');
+    document.getElementById('trackingReplaceModal').classList.add('hidden');
+};
+
+window.revertTrackingReplace = function() {
+    const id = document.getElementById('trackingReplaceBookId').value;
+    const order = state.orders.find(o => o.id === id);
+    if (!order || !order.isReplaced) return;
+
+    if (confirm('คุณต้องการยกเลิกการแทนที่ และกลับไปใช้ข้อมูลหนังสือเดิมใช่หรือไม่?')) {
+        order.title = order.originalTitle;
+        order.price = order.originalPrice;
+        order.publisher = order.originalPublisher;
+        order.amount = order.price * order.qty;
+        
+        delete order.isReplaced;
+        delete order.originalTitle;
+        delete order.originalPrice;
+        delete order.originalPublisher;
+        delete order.remark;
+
+        saveOrdersToStorage();
+        renderAllViews();
+        showToast('ยกเลิกการแทนที่เรียบร้อย', 'info');
+        document.getElementById('trackingReplaceModal').classList.add('hidden');
+    }
+};
+
 function renderAllViews() {
+
+    const trackingBtn = document.getElementById('trackingTabBtn');
+    if (trackingBtn) {
+        if (state.isAdmin || state.showTrackingTab) {
+            trackingBtn.classList.remove('hidden');
+        } else {
+            trackingBtn.classList.add('hidden');
+        }
+    }
+
+    renderTrackingTab();
     renderEstimateTab();
     renderPopulationSection();
     renderYearDropdownOptions();
@@ -1498,6 +1802,8 @@ function initTargetConfigEvents() {
 
     const openConfigModal = () => {
         if (document.getElementById('showSubjectCheckDashboardToggle')) document.getElementById('showSubjectCheckDashboardToggle').checked = state.showSubjectCheckDashboard;
+    const trackingToggle = document.getElementById('showTrackingTabToggle');
+    if (trackingToggle) trackingToggle.checked = state.showTrackingTab;
         if (document.getElementById('showEstimateTabToggle')) document.getElementById('showEstimateTabToggle').checked = state.showEstimateTab;
         
         const list = document.getElementById('targetConfigList');
@@ -1602,6 +1908,11 @@ function initTargetConfigEvents() {
 
     saveTargetConfigBtn.addEventListener('click', () => {
         state.showSubjectCheckDashboard = document.getElementById('showSubjectCheckDashboardToggle').checked;
+    const trackingToggle = document.getElementById('showTrackingTabToggle');
+    if (trackingToggle) {
+        state.showTrackingTab = trackingToggle.checked;
+        localStorage.setItem('freebook_show_tracking_tab', state.showTrackingTab);
+    }
         saveShowCheckToStorage();
 
         document.querySelectorAll('.target-input-field').forEach(input => {
@@ -3493,3 +3804,11 @@ window.movePopulationRow = function(year, dept, dir) {
     savePopulationsToStorage();
     renderPopulationSection();
 };
+
+function formatShortDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()+543}`;
+}
