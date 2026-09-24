@@ -166,7 +166,7 @@
                     <div class="kpi-icon"><i class="fa-solid fa-wallet"></i></div>
                     <div class="kpi-info">
                         <span class="kpi-label">งบประมาณรวมทั้งหมด</span>
-                        <h2 class="kpi-value" id="kpiTotalBudget">0 ฿</h2>
+                        <h2 class="kpi-value" id="kpiTotalBudget">0</h2>
                         <span class="kpi-sub">คำนวณจากรายการสั่งซื้อช่วงที่เลือก</span>
                     </div>
                 </div>
@@ -183,9 +183,9 @@
                 <div class="kpi-card card-gradient-3">
                     <div class="kpi-icon"><i class="fa-solid fa-book"></i></div>
                     <div class="kpi-info">
-                        <span class="kpi-label">จำนวนรายการวิชา</span>
+                        <span class="kpi-label">จำนวนรายการหนังสือ</span>
                         <h2 class="kpi-value" id="kpiTotalSubjects">0 รายการ</h2>
-                        <span class="kpi-sub">รายวิชาเรียนฟรี ปวช.</span>
+                        <span class="kpi-sub" id="kpiSubSubjects">รายวิชาเรียนฟรี ปวช.</span>
                     </div>
                 </div>
 
@@ -348,7 +348,7 @@
                             <td colspan="8" class="text-right"><strong>รวมทั้งสิ้น (<span id="filteredCount">0</span> รายการ):</strong></td>
                             <td class="text-right"><strong id="totalFilteredQty">0</strong></td>
                             <td></td>
-                            <td class="text-right"><strong id="totalFilteredAmount" class="highlight-price">0 ฿</strong></td>
+                            <td class="text-right"><strong id="totalFilteredAmount" class="highlight-price">0</strong></td>
                             <td class="admin-only hidden"></td>
                         </tr>
                     </tfoot>
@@ -478,7 +478,7 @@
                                 <td class="text-right"><strong id="sumGrade1">0</strong></td>
                                 <td class="text-right"><strong id="sumGrade2">0</strong></td>
                                 <td class="text-right"><strong id="sumGrade3">0</strong></td>
-                                <td class="text-right"><strong id="sumGradeTotal">0 ฿</strong></td>
+                                <td class="text-right"><strong id="sumGradeTotal">0</strong></td>
                                 <td></td>
                             </tr>
                         </tfoot>
@@ -507,7 +507,7 @@
                                 <td colspan="2" class="text-right"><strong>รวมทั้งสิ้น:</strong></td>
                                 <td class="text-center"><strong id="sumPubItems">0</strong></td>
                                 <td class="text-right"><strong id="sumPubCopies">0</strong></td>
-                                <td class="text-right"><strong id="sumPubAmount">0 ฿</strong></td>
+                                <td class="text-right"><strong id="sumPubAmount">0</strong></td>
                                 <td class="text-center"><strong>100.0%</strong></td>
                             </tr>
                         </tfoot>

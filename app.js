@@ -282,13 +282,25 @@ let state = {
 // =========================================================
 // TEXT NORMALIZATION UTILS (Cleans extra spaces & matches strings)
 // =========================================================
+function cleanThaiText(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/\s+/g, ' ')
+        .trim()
+        // ลบสระหรือวรรณยุกต์ภาษาไทยที่พิมพ์ซ้ำซ้อนกันโดยไม่ตั้งใจ (เช่น ุุ -> ุ, ่่ -> ่, ์์ -> ์)
+        .replace(/([\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])\1+/g, '$1')
+        // ลบทัณฑฆาตที่ติดกับสระหน้าโดยผิดหลัก (เช่น ใ์ -> ใ)
+        .replace(/([เแโใไ])[\u0E4C]/g, '$1');
+}
+
 function normalizeText(str) {
     if (!str) return '';
-    return String(str).replace(/\s+/g, ' ').trim();
+    return cleanThaiText(str);
 }
 
 function getNormalizedKey(str) {
-    return normalizeText(str).toLowerCase();
+    if (!str) return '';
+    return cleanThaiText(str).toLowerCase().replace(/[\s\-]/g, '');
 }
 
 async function sha256(message) {
@@ -495,9 +507,22 @@ function normalizeCode(str) {
     return String(str).replace(/[\s\-]/g, '').trim().toUpperCase();
 }
 
-function getUniqueSubjectKey(o) {
-    // Only use normalized code to determine uniqueness, preventing issues with varying titles
+function getCurriculumSubjectKey(o) {
+    // นับตามรหัสวิชาหลักสูตร (ไม่สนสำนักพิมพ์/ผู้แต่ง) ใช้สำหรับตรวจสอบแผนการเรียนและวิชาตามหลักสูตร
     return normalizeCode(o.code);
+}
+
+function getUniqueBookItemKey(o) {
+    // นับตามรายการหนังสือจัดซื้อจริง: รหัสวิชา + สำนักพิมพ์ + ผู้แต่ง (ถ้าไม่มีผู้แต่งให้ใช้ชื่อหนังสือ)
+    const code = normalizeCode(o.code);
+    const pub = getNormalizedKey(o.publisher);
+    const author = getNormalizedKey(o.author);
+    const title = getNormalizedKey(o.title);
+    return `${code}__${pub}__${author || title}`;
+}
+
+function getUniqueSubjectKey(o) {
+    return getUniqueBookItemKey(o);
 }
 
 // =========================================================
@@ -1190,7 +1215,8 @@ function initImportExcelEvents() {
                 getNormalizedKey(o.grade) === getNormalizedKey(newRow.grade) &&
                 getNormalizedKey(o.code) === getNormalizedKey(newRow.code) &&
                 getNormalizedKey(o.title) === getNormalizedKey(newRow.title) &&
-                getNormalizedKey(o.publisher) === getNormalizedKey(newRow.publisher)
+                getNormalizedKey(o.publisher) === getNormalizedKey(newRow.publisher) &&
+                (!newRow.author || !o.author || getNormalizedKey(o.author) === getNormalizedKey(newRow.author))
             );
 
             if (existingIndex !== -1) {
@@ -1730,7 +1756,7 @@ function renderSubjectCheckWidget() {
             }
             
             const deptGradeOrders = activeOrders.filter(o => getNormalizedKey(o.dept) === getNormalizedKey(p.dept) && getNormalizedKey(o.grade) === getNormalizedKey(p.grade));
-            const uniqueSubjectKeys = new Set(deptGradeOrders.map(o => getUniqueSubjectKey(o)));
+            const uniqueSubjectKeys = new Set(deptGradeOrders.map(o => getCurriculumSubjectKey(o)));
             const actualCount = uniqueSubjectKeys.size;
             if (targetCount === 0 && actualCount === 0) return;
             hasData = true;
@@ -2079,15 +2105,24 @@ function renderKPIs() {
     const totalBudget = activeOrders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0);
     const totalCopies = activeOrders.reduce((sum, o) => sum + (Number(o.qty) || 0), 0);
     
-    const uniqueSubjectsSet = new Set(activeOrders.map(o => getUniqueSubjectKey(o)));
-    const totalUniqueSubjects = uniqueSubjectsSet.size;
+    // รายการหนังสือจัดซื้อจริง (Unique Book Items: รหัสวิชา + สำนักพิมพ์ + ผู้แต่ง)
+    const uniqueBookItemsSet = new Set(activeOrders.map(o => getUniqueBookItemKey(o)));
+    const totalBookItems = uniqueBookItemsSet.size;
+    // รายวิชาตามหลักสูตร (Unique Curriculum Subjects: รหัสวิชาอย่างเดียว)
+    const totalCurriculumSubjects = new Set(activeOrders.map(o => getCurriculumSubjectKey(o))).size;
     
     const activeDepts = new Set(activeOrders.map(o => normalizeText(o.dept))).size;
     const activePubs = new Set(activeOrders.map(o => normalizeText(o.publisher))).size;
 
-    document.getElementById('kpiTotalBudget').innerText = formatCurrency(totalBudget) + ' ฿';
+    document.getElementById('kpiTotalBudget').innerText = formatCurrency(totalBudget);
     document.getElementById('kpiTotalCopies').innerText = totalCopies.toLocaleString('th-TH') + ' เล่ม';
-    document.getElementById('kpiTotalSubjects').innerText = totalUniqueSubjects.toLocaleString('th-TH') + ' รายวิชา';
+    document.getElementById('kpiTotalSubjects').innerText = totalBookItems.toLocaleString('th-TH') + ' รายการ';
+    
+    const subSubjectsEl = document.getElementById('kpiSubSubjects');
+    if (subSubjectsEl) {
+        subSubjectsEl.innerText = `จาก ${totalCurriculumSubjects.toLocaleString('th-TH')} รายวิชาหลักสูตร`;
+    }
+
     document.getElementById('kpiTotalDeptsPubs').innerText = `${activeDepts} แผนก / ${activePubs} ค่าย`;
 }
 
@@ -2255,7 +2290,7 @@ function renderMasterTable() {
             <td>${escapeHtml(item.vecSequence || '-')}</td>
             <td class="text-right">${Number(item.qty).toLocaleString()}</td>
             <td class="text-right">${formatCurrency(item.price)}</td>
-            <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
+            <td class="text-right highlight-price">${formatCurrency(item.amount)}</td>
             <td class="text-center admin-only ${state.isAdmin ? '' : 'hidden'}">
                 <button class="btn-table-action edit" onclick="editBook('${item.id}')" title="แก้ไข">
                     <i class="fa-solid fa-pen"></i>
@@ -2270,7 +2305,7 @@ function renderMasterTable() {
 
     document.getElementById('filteredCount').innerText = filtered.length;
     document.getElementById('totalFilteredQty').innerText = totalQty.toLocaleString() + ' เล่ม';
-    document.getElementById('totalFilteredAmount').innerText = formatCurrency(totalAmount) + ' ฿';
+    document.getElementById('totalFilteredAmount').innerText = formatCurrency(totalAmount);
 }
 
 // =========================================================
@@ -2335,7 +2370,7 @@ function renderDepartmentTab() {
                         <div class="section-summary-badges">
                             <span class="summary-pill" style="font-size:0.78rem;">วิชาเรียน: <strong>${gUniqueSubj}</strong> วิชา</span>
                             <span class="summary-pill" style="font-size:0.78rem;">จำนวนสั่ง: <strong>${gQty.toLocaleString()}</strong> เล่ม</span>
-                            <span class="summary-pill" style="font-size:0.78rem;">รวมเงิน: <strong>${formatCurrency(gAmt)} ฿</strong></span>
+                            <span class="summary-pill" style="font-size:0.78rem;">รวมเงิน: <strong>${formatCurrency(gAmt)}</strong></span>
                         </div>
                     </div>
 
@@ -2365,7 +2400,7 @@ function renderDepartmentTab() {
                                         ${showExtraCols ? `<td>${escapeHtml(item.approvalMonthYear || '-')}</td><td>${escapeHtml(item.vecSequence || '-')}</td>` : ''}
                                         <td class="text-right">${item.qty.toLocaleString()}</td>
                                         <td class="text-right">${formatCurrency(item.price)}</td>
-                                        <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
+                                        <td class="text-right highlight-price">${formatCurrency(item.amount)}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -2373,7 +2408,7 @@ function renderDepartmentTab() {
                                 <tr style="background-color: var(--bg-card); font-weight: 600;">
                                     <td colspan="6" class="text-right">รวมยอดทั้งหมด (เช็คยอด 1,000 บาท/คน):</td>
                                     <td class="text-right" style="color: ${gPrice > 1000 ? '#ef4444' : 'inherit'};">${formatCurrency(gPrice)}</td>
-                                    <td class="text-right highlight-price">${formatCurrency(gAmt)} ฿</td>
+                                    <td class="text-right highlight-price">${formatCurrency(gAmt)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -2390,7 +2425,7 @@ function renderDepartmentTab() {
                 <div class="section-summary-badges">
                     <span class="summary-pill">วิชาเรียนรวม: <strong>${uniqueDeptSubjects}</strong> รายวิชา</span>
                     <span class="summary-pill">จำนวนเล่มรวม: <strong>${deptQty.toLocaleString()}</strong> เล่ม</span>
-                    <span class="summary-pill" style="background:var(--primary-light);">งบประมาณรวมแผนก: <strong>${formatCurrency(deptAmount)} ฿</strong></span>
+                    <span class="summary-pill" style="background:var(--primary-light);">งบประมาณรวมแผนก: <strong>${formatCurrency(deptAmount)}</strong></span>
                 </div>
             </div>
             ${gradeSectionsHtml}
@@ -2414,7 +2449,7 @@ function renderPublisherTab() {
         const pubQty = pubOrders.reduce((sum, o) => sum + o.qty, 0);
         const pubAmount = pubOrders.reduce((sum, o) => sum + o.amount, 0);
         
-        const uniquePubSubjects = new Set(pubOrders.map(o => getUniqueSubjectKey(o))).size;
+        const uniquePubSubjects = new Set(pubOrders.map(o => getUniqueBookItemKey(o))).size;
 
         const card = document.createElement('div');
         card.className = 'section-card';
@@ -2424,9 +2459,9 @@ function renderPublisherTab() {
                     <i class="fa-solid fa-print"></i> ${escapeHtml(pubName)}
                 </h3>
                 <div class="section-summary-badges">
-                    <span class="summary-pill">จำนวนวิชา: <strong>${uniquePubSubjects}</strong> รายวิชา (${pubOrders.length} รายการคำสั่ง)</span>
+                    <span class="summary-pill">จำนวนหนังสือ: <strong>${uniquePubSubjects}</strong> รายการ (${pubOrders.length} รายการคำสั่ง)</span>
                     <span class="summary-pill">ยอดสั่งรวม: <strong>${pubQty.toLocaleString()}</strong> เล่ม</span>
-                    <span class="summary-pill">รวมเป็นเงิน: <strong>${formatCurrency(pubAmount)} ฿</strong></span>
+                    <span class="summary-pill">รวมเป็นเงิน: <strong>${formatCurrency(pubAmount)}</strong></span>
                 </div>
             </div>
             ${pubOrders.length > 0 ? `
@@ -2460,7 +2495,7 @@ function renderPublisherTab() {
                                     <td>${escapeHtml(item.vecSequence || '-')}</td>
                                     <td class="text-right">${item.qty.toLocaleString()}</td>
                                     <td class="text-right">${formatCurrency(item.price)}</td>
-                                    <td class="text-right highlight-price">${formatCurrency(item.amount)} ฿</td>
+                                    <td class="text-right highlight-price">${formatCurrency(item.amount)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -2505,7 +2540,7 @@ function renderSummaryReports() {
             <td class="text-right">${g1 > 0 ? formatCurrency(g1) : '-'}</td>
             <td class="text-right">${g2 > 0 ? formatCurrency(g2) : '-'}</td>
             <td class="text-right">${g3 > 0 ? formatCurrency(g3) : '-'}</td>
-            <td class="text-right"><strong>${rowSum > 0 ? formatCurrency(rowSum) + ' ฿' : '-'}</strong></td>
+            <td class="text-right"><strong>${rowSum > 0 ? formatCurrency(rowSum) : '-'}</strong></td>
             <td></td>
         `;
         tbody1.appendChild(tr);
@@ -2514,29 +2549,27 @@ function renderSummaryReports() {
     document.getElementById('sumGrade1').innerText = formatCurrency(grandG1);
     document.getElementById('sumGrade2').innerText = formatCurrency(grandG2);
     document.getElementById('sumGrade3').innerText = formatCurrency(grandG3);
-    document.getElementById('sumGradeTotal').innerText = formatCurrency(grandTotal) + ' ฿';
+    document.getElementById('sumGradeTotal').innerText = formatCurrency(grandTotal);
 
     // 2. Publisher Summary Table
     const tbody2 = document.getElementById('summaryPublisherTableBody');
     tbody2.innerHTML = '';
 
-    let grandCopies = 0, grandPubAmount = 0;
-    const globalUniquePubSubjects = new Set();
+    let grandCopies = 0, grandPubAmount = 0, grandPubItems = 0;
     const allPubs = Array.from(new Set([...KNOWN_PUBLISHERS, ...activeOrders.map(o => normalizeText(o.publisher))]));
 
     allPubs.forEach((pub, idx) => {
         const pubOrders = activeOrders.filter(o => getNormalizedKey(o.publisher) === getNormalizedKey(pub));
         
-        const pubUniqueSet = new Set(pubOrders.map(o => getUniqueSubjectKey(o)));
+        const pubUniqueSet = new Set(pubOrders.map(o => getUniqueBookItemKey(o)));
         const itemCount = pubUniqueSet.size;
-
-        pubUniqueSet.forEach(key => globalUniquePubSubjects.add(key));
 
         const copyCount = pubOrders.reduce((s, o) => s + o.qty, 0);
         const pubAmt = pubOrders.reduce((s, o) => s + o.amount, 0);
 
         if (itemCount === 0 && copyCount === 0) return; // Hide empty rows for dynamically added publishers with 0 orders
 
+        grandPubItems += itemCount;
         grandCopies += copyCount;
         grandPubAmount += pubAmt;
 
@@ -2554,9 +2587,9 @@ function renderSummaryReports() {
         tbody2.appendChild(tr);
     });
 
-    document.getElementById('sumPubItems').innerText = globalUniquePubSubjects.size;
+    document.getElementById('sumPubItems').innerText = grandPubItems.toLocaleString();
     document.getElementById('sumPubCopies').innerText = grandCopies.toLocaleString();
-    document.getElementById('sumPubAmount').innerText = formatCurrency(grandPubAmount) + ' ฿';
+    document.getElementById('sumPubAmount').innerText = formatCurrency(grandPubAmount);
 }
 
 // =========================================================
@@ -2637,7 +2670,8 @@ function initFormEvents() {
                 getNormalizedKey(o.grade) === getNormalizedKey(grade) &&
                 getNormalizedKey(o.code) === getNormalizedKey(code) &&
                 getNormalizedKey(o.title) === getNormalizedKey(title) &&
-                getNormalizedKey(o.publisher) === getNormalizedKey(publisher)
+                getNormalizedKey(o.publisher) === getNormalizedKey(publisher) &&
+                (!author || !o.author || getNormalizedKey(o.author) === getNormalizedKey(author))
             );
 
             if (existingIndex !== -1) {
