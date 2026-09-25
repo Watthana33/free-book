@@ -787,6 +787,10 @@ function initGlobalTermSelector() {
         state.selectedYear = yearSelect.value;
         state.selectedSemester = semSelect.value;
         saveSelectedTermToStorage();
+        if (state.selectedYear !== 'ALL') {
+            const estYearSelect = document.getElementById('estimateYearSelect');
+            if (estYearSelect) estYearSelect.value = state.selectedYear;
+        }
         renderAllViews();
     };
 
@@ -804,6 +808,29 @@ function initGlobalTermSelector() {
     }
 }
 
+function populateEstimateYearSelect(forceYear = null) {
+    const yearSelect = document.getElementById('estimateYearSelect');
+    if (!yearSelect) return (state.selectedYear !== 'ALL' ? state.selectedYear : '2569');
+
+    const sortedYears = getAllYearsSortedDescending();
+    if (sortedYears.length === 0) sortedYears.push(2569);
+
+    let targetYear = forceYear;
+    if (!targetYear && yearSelect.value && sortedYears.includes(Number(yearSelect.value))) {
+        targetYear = yearSelect.value;
+    }
+    if (!targetYear && state.selectedYear && state.selectedYear !== 'ALL' && sortedYears.includes(Number(state.selectedYear))) {
+        targetYear = state.selectedYear;
+    }
+    if (!targetYear) {
+        targetYear = String(sortedYears[0]);
+    }
+
+    yearSelect.innerHTML = sortedYears.map(y => `<option value="${y}">ปีการศึกษา ${y}</option>`).join('');
+    yearSelect.value = String(targetYear);
+    return String(targetYear);
+}
+
 function renderYearDropdownOptions() {
     const sortedYears = getAllYearsSortedDescending();
     const yearSelect = document.getElementById('globalYearSelect');
@@ -818,6 +845,8 @@ function renderYearDropdownOptions() {
         yearSelect.value = sortedYears[0] ? String(sortedYears[0]) : '2569';
         state.selectedYear = yearSelect.value;
     }
+
+    populateEstimateYearSelect();
 }
 
 function getFilteredOrdersByTerm() {
@@ -1325,6 +1354,10 @@ function initTabNavigation() {
 
             if (targetTab === 'tab-dashboard') {
                 setTimeout(renderCharts, 100);
+            } else if (targetTab === 'tab-estimate') {
+                populateEstimateYearSelect();
+                renderEstimateTab();
+                renderPopulationSection();
             }
         });
     });
@@ -3194,8 +3227,11 @@ function initEstimateEvents() {
     if (addBtn) {
         addBtn.addEventListener('click', () => {
             if (!state.isAdmin) return;
-            const year = document.getElementById('estimateYearSelect').value;
-            if (!year) {
+            let year = document.getElementById('estimateYearSelect')?.value;
+            if (!year || year === 'ALL') {
+                year = populateEstimateYearSelect();
+            }
+            if (!year || year === 'ALL') {
                 alert('กรุณาเลือกปีการศึกษาก่อน');
                 return;
             }
@@ -3221,10 +3257,16 @@ function initEstimateEvents() {
     if (autoFillBtn) {
         autoFillBtn.addEventListener('click', () => {
             if (!state.isAdmin) return;
+            let year = document.getElementById('estimateYearSelect')?.value;
+            if (!year || year === 'ALL') {
+                year = populateEstimateYearSelect();
+            }
+            if (!year || year === 'ALL') {
+                alert('กรุณาเลือกปีการศึกษาก่อน');
+                return;
+            }
             if (!confirm('ระบบจะดึงรายชื่อแผนกทั้งหมดมาสร้างในตารางให้ทันที ยืนยันหรือไม่?')) return;
             
-            const year = document.getElementById('estimateYearSelect').value;
-            if (!year) return;
             if (!state.studentEstimates[year]) state.studentEstimates[year] = {};
             
             // Get unique depts from orders
@@ -3277,19 +3319,14 @@ window.deleteEstimateRow = function(year, dept) {
 
 function renderEstimateTab(forceYear = null) {
     updateEstimateToggleUI();
+    const targetYear = populateEstimateYearSelect(forceYear);
+
+    const printMeta = document.getElementById('estimatePrintMeta');
+    if (printMeta && targetYear) {
+        printMeta.innerText = `ประจำปีการศึกษา ${targetYear}`;
+    }
+
     if (!state.showEstimateTab) return; // Skip rendering table/chart if disabled
-    
-    const yearSelect = document.getElementById('estimateYearSelect');
-    if (!yearSelect) return;
-    
-    // Populate year dropdown
-    const years = Array.from(new Set([...state.customYears, state.selectedYear].map(y => Number(y)))).filter(y => !isNaN(y)).sort((a,b)=>b-a);
-    yearSelect.innerHTML = years.map(y => `<option value="${y}">ปีการศึกษา ${y}</option>`).join('');
-    
-    const targetYear = forceYear || state.selectedYear;
-    yearSelect.value = targetYear;
-    
-    document.getElementById('estimatePrintMeta').innerText = `ประจำปีการศึกษา ${targetYear}`;
     
     const tbody = document.getElementById('estimateTableBody');
     const tfoot = document.getElementById('estimateTableFoot');
@@ -3507,12 +3544,19 @@ function initPopulationEvents() {
     const autoFillBtn = document.getElementById('autoFillPopulationBtn');
     if (autoFillBtn) {
         autoFillBtn.addEventListener('click', () => {
-            const year = document.getElementById('estimateYearSelect').value;
-            if (!year) return;
+            if (!state.isAdmin) return;
+            let year = document.getElementById('estimateYearSelect')?.value;
+            if (!year || year === 'ALL') {
+                year = populateEstimateYearSelect();
+            }
+            if (!year || year === 'ALL') {
+                alert('กรุณาเลือกปีการศึกษาก่อน');
+                return;
+            }
             
             if (confirm('ต้องการดึงรายชื่อแผนกวิชา และคำนวณยอดจำนวนนักเรียน (จากจำนวนหนังสือที่สั่งเยอะที่สุดในแต่ละระดับชั้น) มาใส่ตารางให้ทันที ยืนยันหรือไม่? (หมายเหตุ: ข้อมูลตัวเลขเดิมจะถูกเขียนทับด้วยยอดสูงสุดที่คำนวณได้)')) {
-                const yearOrders = state.orders.filter(o => o.year == year);
-                const depts = [...new Set(yearOrders.map(o => o.dept))];
+                const yearOrders = state.orders.filter(o => String(o.year) === String(year));
+                const depts = [...new Set(yearOrders.map(o => normalizeText(o.dept)).filter(Boolean))];
                 
                 if (!state.studentPopulations[year]) {
                     state.studentPopulations[year] = { _order: [], updateDate: new Date().toISOString() };
@@ -3525,10 +3569,10 @@ function initPopulationEvents() {
                     if (d === '_order' || d === 'updateDate') return;
 
                     // Calculate max qty for each grade from orders
-                    const dOrders = yearOrders.filter(o => o.dept === d);
+                    const dOrders = yearOrders.filter(o => normalizeText(o.dept) === d);
                     const getGradeMax = (gradeName) => {
                         const gradeOrders = dOrders.filter(o => o.grade === gradeName);
-                        return gradeOrders.length > 0 ? Math.max(...gradeOrders.map(o => o.qty || 0)) : 0;
+                        return gradeOrders.length > 0 ? Math.max(...gradeOrders.map(o => Number(o.qty) || 0)) : 0;
                     };
 
                     const v1 = getGradeMax('ปวช.1');
@@ -3559,8 +3603,11 @@ function initPopulationEvents() {
     if (addBtn) {
         addBtn.addEventListener('click', () => {
             if (!state.isAdmin) return;
-            const year = document.getElementById('estimateYearSelect').value;
-            if (!year) {
+            let year = document.getElementById('estimateYearSelect')?.value;
+            if (!year || year === 'ALL') {
+                year = populateEstimateYearSelect();
+            }
+            if (!year || year === 'ALL') {
                 alert('กรุณาเลือกปีการศึกษาก่อน');
                 return;
             }
@@ -3598,7 +3645,7 @@ function saveShowPopulationToStorage() {
     syncToFirebase('showStudentPopulation', state.showStudentPopulation);
 }
 
-function deletePopulationRow(year, dept) {
+window.deletePopulationRow = function(year, dept) {
     if (!state.isAdmin) return;
     if (confirm('ต้องการลบแผนก ' + dept + ' ออกจากตารางจำนวนนักเรียนใช่หรือไม่?')) {
         delete state.studentPopulations[year][dept];
@@ -3612,9 +3659,9 @@ function deletePopulationRow(year, dept) {
         savePopulationsToStorage();
         renderPopulationSection();
     }
-}
+};
 
-function updatePopulationField(year, dept, field, value) {
+window.updatePopulationField = function(year, dept, field, value) {
     if (!state.isAdmin) return;
     const num = parseInt(value) || 0;
     if (!state.studentPopulations[year]) return;
@@ -3624,10 +3671,13 @@ function updatePopulationField(year, dept, field, value) {
     state.studentPopulations[year].updateDate = new Date().toISOString();
     savePopulationsToStorage();
     renderPopulationSection(); // Re-render to update chart and totals
-}
+};
 
 function renderPopulationSection() {
-    const targetYear = document.getElementById('estimateYearSelect')?.value || state.selectedYear;
+    let targetYear = document.getElementById('estimateYearSelect')?.value;
+    if (!targetYear || targetYear === 'ALL') {
+        targetYear = populateEstimateYearSelect();
+    }
     const section = document.getElementById('populationContentArea');
     const msg = document.getElementById('populationDisabledMessage');
     const toggle = document.getElementById('populationToggleSwitch');
